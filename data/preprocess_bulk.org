@@ -1,0 +1,276 @@
+#+OPTIONS: ^:nil
+#+PROPERTY: header-args :exports both :eval yes :results output verbatim
+#+bibliography: ~/Documents/bibtex/atb.bib
+#+CITE_EXPORT: csl pnas.csl
+#+SETUPFILE: ~/.emacs.d/org-templates/readtheorg_inline.theme
+#+title: Processing the IPRGC bulk samples
+
+* Introduction
+
+While preparing this containerized image of our analyses of the Speer
+lab's TRAP and RNASeq experiments, I effectively ignored the state of
+the bulk RNASeq analyses performed by Theresa.  This is primarily
+because I explicitly trust everything she did.
+
+However, I should at least be passingly familiar with the processes
+she performed and be able to provide some documentation of the
+preprocessing of these samples.  I decided to use this as an
+opportunity to check over some of the ways I use the same tools and
+ensure that we get to the same result.  I do not think I will be able
+to create a containerized version of the processing pipeline because
+it pretty explicitly requires a compute cluster in order to complete
+in a reasonable amount of time -- but I would kind of like to do it
+anyway for at least the processing of a few samples so that other
+people can successfully recapitulate every step we took from beginning
+to end.
+
+With that idea in mind, I will use this document to test a few things:
+
+1. We have already uploaded the bioproject/biosamples to the SRA, so
+   I should be able to demonstrate how to acquire the metadata from
+   the SRA, the raw reads, and merge it with much larger sample sheet
+   from the Speer lab.  Once merged, this should provide everything
+   one would need to comfortably examing and work with the samples.
+2. That I can run a similar or identical preprocessing pipeline to
+   Theresa's.  I want to also leave a recipe to build this pipeline
+   for other people and check out and run with minimal effort.
+3. That the resulting outputs can be provided to this iprgc container
+   image and used de-novo.
+
+
+* Downloading the raw data
+
+I use a little tool I wrote for myself to help in the various
+processing steps.  It was written by a crazy person who was unaware of
+snakemake and similar tools at the time (I think snakemake was quite
+new or had just started); and so probably should not be used by anyone
+who has any sense.
+
+When I ran the following invocation, it did the following:
+
+1. Query the SRA for the Speer lab bioproject and download the
+   metadata.csv.  This information may be similarly acquired by going
+   to the run selector and using the metadata link.
+2. Extract all sample accessions and submit a fastq-download job on
+   the cluster to download the fastq files for them.
+
+
+The resulting files reside in $(pwd)/PRJNA1427139/{accession}/
+
+I might change cyoa script to put them in .../{accession}/unprocessed/
+
+#+begin_src bash :session *org-bash* :eval no
+pwd
+module add cyoa
+cyoa --method prjadown --input PRJNA1427139
+#+end_src
+
+
+** Trimming/aligning/quantification/counting
+
+The various steps for processing the downloaded data may either be
+submitted separately, or in a single invocation.  Here are examples of
+both ways of dealing with the data.  The following steps make one
+important assumption: a shared directory for genome/transcriptome/etc
+indices, annotations, and raw sequences; cyoa assumes this resides in
+libdir=${HOME}/libraries and has the following structure:
+
+{libdir}/{library_type}/{file_type}/{species_name}.fasta
+
+The library_type may be one of: 'genome', 'CDS', 'rRNA', or a few
+other less-used things like 'proteome' or 'mt'.
+
+The file_type is comprised of categories like: 'genbank', 'fasta',
+'gff', 'blast', 'codon', 'amino_acids', etc.
+
+The species_name is a unique string that I use to remember what
+organism I am working with.  In this case, I am using 'mm38_112' which
+reminds me that I am using the ensembl release 112 of mus musculus.
+
+*** Assembly download
+
+I generally prefer getting this information from an assembly genbank
+file if possible because it is such a rich data type.
+
+Thus, if I had a blank libraries tree, I could grab the current mouse
+assembly in one of the following ways:
+
+1. Go to NCBI/ensembl and find the appropriate download link.  I
+  usually seek out the full genbank (all annotations + sequence), or
+  the full directory of ensembl raw data (containing all the
+  fasta+gff files).
+
+  Then, assuming I downloaded a large genbank file, I will copy it to
+  {libdir}/genome/genbank/
+
+  #+begin_src bash :session *org-bash* :eval no
+  cd $libdir/genome/tmp
+  gunzip GCF_000001635.27_GRCm39_genomic.gbff.gz
+  xz -9e -f GCF_000001635.27_GRCm39_genomic.gbff
+  ln -s GCF_000001635.27_GRCm39_genomic.gbff.xz mm39_ncbi_9.gbff.xz
+  cyoa --method gb2gff --input GCF_000001635.27_GRCm39_genomic.gbff.xz
+  ## Take a minute to look over the outputs.  crap, I should have used mm39_ncbi_9.gbff.xz
+  ## as the input, now I will need to rename the output files.  oh well
+  ## I have had some species fail due to weird entries; hopefully it is pretty robust by now.
+  mv GCF_000001635.27_GRCm39_genomic.gbff.xz ../genbank
+  mv mm39_ncbi_9.gbff.xz ../genbank
+  #+end_src
+
+  Here are the outputs of this process:
+
+   + GCF_000001635.27_GRCm39_genomic_all.gff: a dump of every
+     annotated feature as a gff
+   + GCF_000001635.27_GRCm39_genomic_cds.gff: every CDS gff entry
+   + GCF_000001635.27_GRCm39_genomic.faa: all amino acid sequences
+   + GCF_000001635.27_GRCm39_genomic.ffn: every CDS fasta
+   + GCF_000001635.27_GRCm39_genomic.fsa: The genome
+   + GCF_000001635.27_GRCm39_genomic.gff: Most features in gff, but
+     not quite all.
+   + GCF_000001635.27_GRCm39_genomic_interCDS.gff: gff entries for the
+     inter-CDS regions
+   + GCF_000001635.27_GRCm39_genomic_miscRNA.fasta: all miscRNA
+     entries
+   + GCF_000001635.27_GRCm39_genomic_miscRNA.gff: their gff entries
+   + GCF_000001635.27_GRCm39_genomic_ncRNA.fasta: ncRNA sequences
+   + GCF_000001635.27_GRCm39_genomic_ncRNA.gff: ncRNA gff entries
+   + GCF_000001635.27_GRCm39_genomic_rrna.fasta: The ribosomes
+   + GCF_000001635.27_GRCm39_genomic_rrna.gff: and their gff info.
+
+     #+begin_src bash :session *org-bash* :eval no
+     mv GCF_000001635.27_GRCm39_genomic_rrna.fasta $libdir/rRNA/fasta/mm39_ncbi_9.fasta
+     mv GCF_000001635.27_GRCm39_genomic_rrna.gff $libdir/rRNA/gff/mm39_ncbi_9.gff
+     mv GCF_000001635.27_GRCm39_genomic_all.gff $libdir/genome/gff/mm39_ncbi_9.gff
+     mv GCF_000001635.27_GRCm39_genomic.fsa $libdir/genome/fasta/mm39_ncbi_9.gff
+     mv GCF_000001635.27_GRCm39_genomic_cds.gff $libdir/CDS/gff/mm39_ncbi_9.gff
+     mv GCF_000001635.27_GRCm39_genomic.ffn $libdir/CDS/fasta/mm39_ncbi_9.fasta
+     #+end_src
+
+
+2.  Cheat download from NCBI
+
+   One may cheat a little:
+
+     #+begin_src bash :session *org-bash* :eval no
+     cyoa --method downloadass --input GCF_000001635
+     #+end_src
+
+  This goes to the ncbi bulk download tree and GETs all files
+   of the following types: '_ani_contam_ranges.tsv', '_ani_report.txt',
+   '_assembly_report.txt', '_assembly_stats.txt',
+   '_cds_from_genomic.fna.gz', '_fcs_report.txt',
+   '_feature_count.txt', '_feature_table.txt.gz', '_genomic.fna.gz',
+   '_genomic.gbff.gz', '_genomic.gtf.gz', '_protein.faa.gz',
+   '_protein.gpff.gz', '_rna_from_genomic.fna.gz',
+   '_translated_cds.faa.gz'
+
+3.  Cheat download from ensembl
+
+
+   #+begin_src bash :session *org-bash* :eval no
+cyoa --method dlensem --species mus_musculus
+#+end_src
+
+This invocation goes to ensembl, figures out the latest release (if
+you feed it --release {number} it will get that release), and
+downloads the following:
+
++ genbank annotations ($options->{species}_${release}_ens.gb.gz)
++ master gff ($options->{species}_${release}_ens.gff3.gz)
++ cDNA ($options->{species}_${release}_ens_cdna.ffn.gz)
++ CDS ($options->{species}_${release}_ens.ffn.gz)
++ ncRNA ($options->{species}_${release}_ncrna_ens.fasta.gz)
++ peptides ($options->{species}_${release}_ens.faa.gz)
++ the genome in (whichever exist) the dna_alt, primary, toplevel,
+  masked_alt, masked_toplevel, masked_primary, soft_alt,
+  soft_toplevel, soft_primary formats.
+
+  One must then move the files appropriately; I generally use a name
+  like 'mm39_ens_112'.
+
+
+*** Indexing the genome/transcriptome
+
+Depending on how one invokes the various mappers/quatifiers later, it
+is likely that the following steps will be performed synchronously by
+the first sample before any other samples are allowed to proceed.
+Nonetheless, I usually create my indices first in order to make sure
+that nothing goes off the rails.
+
+#+begin_src bash :session *org-bash* :eval no
+cd $libdir/libraries/genome
+cyoa --method indexhisat --species mm39_ncbi_9 --input mm39_ncbi_9.fasta
+cd ../CDS
+cyoa --libtype CDS --input indexsalmon --species mm39_ncbi_9 --input mm39_ncbi_9.fasta
+## any other method I for which I have written a target may be similarly indexed.
+#+end_src
+
+
+** Trimming/mapping/etc all in one
+
+If I am working with a well characterized model organism, there is a
+good chance every step in the following pipeline will work without a
+problem.
+
+#+begin_src bash :session *org-bash* :eval no
+cd preprocessing
+start=$(pwd)
+for i in *; do
+    pushd $i
+    inputs=$(/bin/ls unprocessed/*.fastq* | tr '\n' ':')
+    cyoa --method prnaseq --species mm39_ncbi_9 --input ${inputs}
+    popd
+done
+#+end_src
+
+The defaults were chosen for easy reference organisms like the mouse;
+so I expect this will do the following:
+
+1. Trim with trimomatic
+2. Run fastqc
+3. Align the trimmed reads via hisat2 against the genome index
+4. Quantify the trimmed reads via salmon against the CDS index
+   (hopefully with genome decoys)
+5. Run kraken with the trimmed reads against the bacterial kmer
+   database.
+6. Create the indexed/sorted/compressed alignment via samtools from
+   the hisat alignment
+7. Get the insertsize metrics from GATK using the alignment
+8. Count the reads via subread's tool using the gff 'gene' type and
+   'ID' tag.
+
+Optionally it will also run freebayes and a few other things which I
+do not recall right now.  Most things are configurable.  I have nearly
+finished a core rewrite of cyoa which makes it possible to fully
+specify pretty much any option via a .ini file or .yaml file; but I
+have not quite finished rewriting the underlying templates for this.
+
+* Example scripts
+
+The various invocations above create a series of shell/perl scripts
+and use some basic logic to choose appropriate
+partitions/clusters/accounts/etc on a slurm compute cluster in order
+to submit them.  I will copy/paste the resulting scripts here as
+examples at least until/unless I create a container image.
+
+
+
+
+
+
+
+
+
+
+
+
+
+* Bibliography
+
+
+#+print_bibliography:
+
+
+* PostScript
+
+
+[[file:activity.org][Download]] the original document text.

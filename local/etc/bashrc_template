@@ -1,0 +1,39 @@
+## Note to self: the bashrc gets overwritten by the bashrc_template when make is run.
+umask 002
+
+## Global version information
+export CONTAINER_VERSION=202602
+export BIOC_VERSION=3.22
+export R_VERSION=4.5.2
+export NAME="iprgc_analyses"
+## export HPGLTOOLS_COMMIT='2ba131c696f93b44a2360e412fbba5b008699c83'
+export HPGLTOOLS_COMMIT=""
+
+export BASH=/usr/bin/bash
+export CLICOLOR=true
+export CPUS=$(( $(cat /proc/cpuinfo | grep -c processor) - 1))
+export DEBIAN_FRONTEND=noninteractive
+export EDITOR=vi
+export FTP_PASSIVE=1
+export GREP_COLORS=32
+export GREP_OPTIONS=--color=auto
+export HACKPAGER=more
+export LC_ALL="C"
+export LESSOPEN="| /usr/bin/lesspipe %s"
+export LESS="-RX"
+export MAKEFLAGS="-j $(grep -c ^processor /proc/cpuinfo)"
+export NCPU=$(cat /proc/cpuinfo | grep processor | tail -n 1 | awk -F': ' '{print $2}')
+export PAGER=less
+export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export RENV_PATHS_CACHE=/sw/local/R/renv_cache/tmrc2_macrophage_deb
+## I am not sure if these R_LIBS are appropriate with renv.
+export R_LIBS_USER=/usr/lib/R/site-library
+export R_LIBS_SITE="${R_LIBS_USER}"
+export R_MAX_NUM_DLLS=512
+export SHELL=bash
+
+if [[ -f /usr/share/modules/init/bash ]]; then
+   source /usr/share/modules/init/bash
+fi
+
+## Note to self: the bashrc gets overwritten by the bashrc_template when make is run.

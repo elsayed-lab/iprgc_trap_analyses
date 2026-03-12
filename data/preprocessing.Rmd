@@ -1,0 +1,552 @@
+---
+title: "Preprocessing the IPRGC samples de-novo."
+author: "atb abelew@gmail.com"
+date: "`r Sys.Date()`"
+bibliography: atb.bib
+output:
+  html_document:
+    code_download: true
+    code_folding: show
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: zenburn
+    keep_md: false
+    mode: selfcontained
+    number_sections: true
+    self_contained: true
+    theme: readable
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+  rmdformats::readthedown:
+    code_download: true
+    code_folding: show
+    df_print: paged
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: zenburn
+    width: 300
+    keep_md: false
+    mode: selfcontained
+    toc_float: true
+  BiocStyle::html_document:
+    code_download: true
+    code_folding: show
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: zenburn
+    keep_md: false
+    mode: selfcontained
+    toc_float: true
+---
+
+<style type="text/css">
+body, td {
+  font-size: 16px;
+}
+code.r{
+  font-size: 16px;
+}
+pre {
+  font-size: 16px
+}
+body .main-container {
+  max-width: 1600px;
+}
+</style>
+
+```{r options, include=FALSE}
+library(hpgltools)
+library(reticulate)
+tt <- try(devtools::load_all("~/hpgltools"))
+knitr::opts_knit$set(
+  progress = TRUE, verbose = TRUE, width = 90, echo = TRUE)
+knitr::opts_chunk$set(
+  error = TRUE, fig.width = 8, fig.height = 8, fig.retina = 2,
+  out.width = "100%", dev = "png",
+  dev.args = list(png = list(type = "cairo-png")))
+old_options <- options(digits = 4, stringsAsFactors = FALSE, knitr.duplicate.label = "allow")
+ggplot2::theme_set(ggplot2::theme_bw(base_size = 12))
+ver <- "202305"
+previous_file <- ""
+ver <- format(Sys.Date(), "%Y%m%d")
+
+##tmp <- sm(loadme(filename=paste0(gsub(pattern="\\.Rmd", replace="", x=previous_file), "-v", ver, ".rda.xz")))
+rmd_file <- "preprocessing.Rmd"
+```
+
+# Introduction
+
+This document aims to record the tasks performed to re-preprocess the
+IPRGC samples of the Speer lab.  I have every confidence that Theresa
+did everything perfectly, the only reason I wish to redo these tasks
+lies in the fact that we reorganized slightly the data to represent
+the new files produced by April following a reassessment of the
+samples in ~202404.  It turns out that a small number of samples were
+misnamed and therefore it is difficult to ensure with absolute
+certainty that the existing state of Theresa's working tree is
+representative of the new state of the samples.
+
+Thus it is worth explaining slightly what I did before starting this
+document:
+
+1.  I spent some time with Najib and April in order to create the
+    sample sheet '20240521_speer_consolidated_sample_sheet.xlsx'.
+    This is mostly identical to Theresa's with a few caveats:
+
+    a.  There is now a series of columns with the suffix 'AH'.  With
+        Najib's help, I reconciled the existing IPRGC IDs created by
+        Theresa with the extant samples and copied April's sample
+        sheet information into these columns.  They have the names
+        'Project # AH', 'Sample # AH', 'Rashmi's Sample Name AH',
+        'Prep & Clean AH', 'Sequencing Run AH', 'Read 1 AH', 'Read 2
+        AH', 'Reload & Map Again AH' and comprise columns AO-AV.
+        These columns are only populated for samples iprgc62-iprgc130,
+        because these are (I think) the only samples sequenced by
+        April, and definitely the only samples potentially affected by
+        the file re-copying.
+    b.  Given these new columns, I created a series of columns with
+        the suffix 'atb': 'genotype_atb', 'location_atb', 'time_atb',
+        'time_geo_location_source_atb', and 'rashmi_code_atb'.  These
+        columns are generally identical to Theresa's columns of the
+        same information with potential exceptions in the cases of the
+        files which were moved/reorganized.  The
+        'time_geo_location_source' column is used to signify where I
+        took the information for the previous columns, e.g. if it says
+        TAA_meta, then I took the genotype etc classifications from
+        Theresa's metadata without any interpretation/modification.
+        When it says 'AH filename', then I took that, as one might
+        expect, from April's newly provided filenames.
+    c.  I later added Column AN when assaying Najib's raw_data tree
+        for these samples.  Najib had previously not populated his raw
+        directory tree with any sample >= iprgc_64; so I recorded in
+        this column any actions I took.  These actions fell into three
+        categories:  1.  Nothing (the first 2), 2. Almost nothing (the
+        raw files were actually in Najib's tree, but he had not yet
+        put them into the 'unprocessed' directory.  3.  Nothing
+        existed yet, so I copied the files from my fresh tree
+        (downloaded from the sequencer earlier in 202405) to the
+        appropriate directories in Najib's tree.  I then copy/pasted
+        my command into this column so that we may later double-check
+        them.  I probably could have put this information into this
+        file...
+    d.  At this moment I added a column 'sequence_type_atb' which is
+        either 'previous' or 'takara' so that I can record the likely
+        required trimming process.  I am hopeful that this column will
+        not be needed and that I will be able to use fastp to
+        identically treat all samples old and new.  I hypothesize this
+        is possible after spending a little time reading the takara
+        cogent package code.  It seems to me that their trimming
+        operations are either close-to or identical to what fastp will
+        perform.  If that is not true, then I will do my default
+        trimomatic/fastp trimming for the previous samples and the
+        cogent method for the others.  It should also be noted that I
+        am making the assumption that any sample < 2021 is not takara
+        and vice versa (e.g. anything received with a date after
+        20201221 is takara).
+
+2.  It is hoped that 1c. above has left me in a consistent state and
+    that I have every sample required in the appropriate location in
+    Najib's tree and that they match the modified sample sheet.
+3.  Thus I created a fresh working tree named 'mmusculus_iprgc_2024'
+    and populated it with empty directories 'sample_sheets',
+    'reference', and 'preprocessing'.
+
+# Populating the raw data
+
+From this point on, any command run will be performed in this text
+document, so you will get to read along as I make my
+decisions/mistakes.
+
+I decided I will work using the read-only copies in Najib's tree.
+
+```{bash, eval=FALSE}
+cd preprocessing
+ln -s /fs/cbcb-lab/nelsayed/raw_data/speer/iprgc* .
+```
+
+I now have 129 symlinks in my preprocessing directory with one hole
+where a sample got changed and a couple new iprgc IDs due to the
+changes introduced by April's reprocessing.
+
+After staring at the screen for a moment, I decided to split these
+samples into subdirectories named after the sequencing year, thus:
+
+```{bash, eval=FALSE}
+mkdir 2019 2020 2022 2023
+
+mv iprgc_0[1-8] 2019
+
+mv iprgc_09 iprgc_1* iprgc_2* iprgc_3* iprgc_4* iprgc_5* iprgc_60 iprgc_61 2020
+
+mv iprgc_6* iprgc_7* iprgc_8[0-4] 2022
+
+mv iprgc* 2023
+
+## haha I was a doofus and moved the 100s into 2020 directory because iprgc_1* matches 100+
+mv 2020/iprgc_1[0-9][0-9] 2023
+
+## I later decided to put all the umd sequenced data into the same tree
+mkdir umd_sequenced
+mv 2022/* umd_sequenced/
+mv 2023/* umd_sequenced/
+```
+
+I am doing this because I am guessing there may be relevant
+differences in the various rounds of sequencing.  In addition I am
+reasonably certain all the takara samples are in 2022 and 2023.
+
+Ok, so now I should be able to comfortably process different
+sequencing platform data using for-loops without worrying too much
+about shenanigans.
+
+# Trimming
+
+I am therefore going to take a moment and peek in Theresa's tree and
+see how the early samples were trimmed.
+
+Looking in Theresa's tree, I see that she likely kept my original
+trimmed data using cutadapt (@martinCutadaptRemovesAdapter2011a) and
+also performed a trimomatic (@bolgerTrimmomaticFlexibleTrimmer2014) run.  I
+took a momemt and see that I used cutadapt because the version of
+trimomatic at that time did not have the primers in it for this
+library type; but that has since been ameliorated.  I therefore assume
+that I can comfortably trim with either trimomatic or fastp
+(@chenFastpUltrafastAllinone2018) without problems.  I will definitely
+need to use fastqc (@SandrewsFastQCQuality) after trimming and make
+certain that none of the weirdo i3/i5(or whatever they are called)
+adapters remain.
+
+Oh, an important note: I only configured fastp recently in my pipeline
+and it defaults to trying to do a UMI extraction, which is
+inappropriate for these first samples.  I need to remember to tell it
+not to do that for these.  Also, I do not fully understand UMIs yet.
+
+```{bash, eval=FALSE}
+module add cyoa/202406
+cd 2019
+start=$(pwd)
+for i in $(/bin/ls -d iprgc*); do
+    echo "Starting $i"
+    cd $i
+    inputs=$(/bin/ls unprocessed/*.fastq.gz | tr '\n' ':' | sed 's/:$//g')
+    echo "The inputs are: ${inputs}"
+    cyoa --method trim --input "${inputs}" --jprefix 01
+    cyoa --method fastp --input "${inputs}" --jprefix 01 --do_umi 0
+    cyoa --method umitools --input "${inputs} --jprefix 01
+    cd $start
+done
+
+cd ../2020
+start=$(pwd)
+for i in $(/bin/ls -d iprgc*); do
+    echo "Starting $i"
+    cd $i
+    inputs=$(/bin/ls unprocessed/*.fastq.gz | tr '\n' ':' | sed 's/:$//g')
+    echo "The inputs are: ${inputs}"
+    cyoa --method trim --input "${inputs}" --jprefix 01
+    cyoa --method fastp --input "${inputs}" --jprefix 01 --do_umi 0
+    cd $start
+done
+```
+
+Next steps, which will have to wait a few minutes: download a new
+musculus assembly and check that my trimming results look like
+Theresa's.
+
+For the 2022/2023 samples, I should at the very least be ready to use
+cogent, so let us take a moment and look at Theresa's tree and recall
+how to use it.
+
+Before I went poking through Theresa's tree, I copy/pasted the
+following from April's report:
+
+
+*  The workflow used in this kit takes advantage of a novel
+   technology allowing removal of ribosomal cDNA (originating from
+   rRNA) after cDNA synthesis using probes specific to mammalian
+   rRNA. These R-Probes target nuclear and mitochondrial rRNA
+   sequences; however, the mitochondrial R-Probes are derived from
+   the human mitochondrial genome and are therefore strictly
+   human-specific. The rRNA depletion method used in this kit makes
+   it especially well-suited for working with very small quantities
+   of total RNA. Therefore, you will likely see reads mapping to
+   mouse mitochondrial rRNA.
+*  This kit adds an 8 nucleotide (nt) unique molecular identifier
+   (UMI) through the reverse-transcription step to mitigate
+   potential PCR bias as well as to provide customers with
+   additional information for transcript quantification,
+   specifically for true variants and rare mutations. This kit is
+   designed for analysis with Takara Bio’s Cogent NGS Analysis
+   Pipeline Software, which removes PCR duplicates and errors
+   based on the UMIs.
+*  The directionality of the template-switching reaction
+   preserves the strand orientation of the original RNA,
+   making it possible to obtain strand-specific sequencing
+   data from the synthesized cDNA. Illustrated below are the
+   cDNA library construction process and technologies
+   employed by the kit (Figure 1), and the structural details
+   of final libraries (Figure 2).
+
+# Umi Trimming
+
+The images which follow provide a diagram of the library layout which
+I think answers my questions and looks a little like this:
+
+5'-> Read 2
+P7  i7  R2start UMI   5' sequence                           3' sequence <- R1  i5  p5
+pppp iii RRRRUUNNNXXX actual sequence data from library................ RRRRR iii ppp
+
+R1 is of course the reverse complement of this.  Thus I think I can
+expect a 8 nt UMI specific to each sample followed by the NNNXXX UMI
+which immediately precedes the library sequence.  This should be at
+the beginning of R2 and end of R1 if I interpret this correctly.
+
+With this in mind, I used the umi_tools in order to perform
+deduplication via the following path:
+
+1. label each read with its UMI with umi_tools
+   (@smithUMItoolsModelingSequencing2017)
+2. mapped the full set of reads with hisat2
+   (@kimGraphbasedGenomeAlignment2019) and the mm39_112 genome
+   (@Mus_musculusEnsemblGenome)
+3. Sorted/indexed/compressed the alignment with samtools
+   (@liSequenceAlignmentMap2009)
+4. Counted the reads/gene via htseq (@putriAnalysingHighthroughputSequencing2022)
+5. Invoked umi_tools using the output from #3 to remove reads which
+   share the same start/end positions and UMI (e.g. the duplicates)
+   but keeping the first.
+6. Counted the reads/gene via htseq using the output from #5.
+
+## Brief chat with Colenso on 20240605
+
+I spoke briefly with Colenso today and quickly realized that I was
+foolishly chasing the goal of treating samples <2022 identically to
+those which are >=2022.  They (currently) do not wish to work with any
+of those earlier samples, which makes my life considerably easier.  As
+a result I copied my sample sheet to '20240606_speer_samples.xlsx' and
+deleted from it all IDs from iprgc_01 to iprgc_61.  This means that
+every sample was sequenced identically and all have the same UMI
+configuration.
+
+```{bash, eval=FALSE}
+cd preprocessing
+cd umd_sequenced
+start=$(pwd)
+cd $start
+for i in $(/bin/ls -d iprgc*); do
+    cd $i
+    echo $i
+    r1_input=$(/bin/ls unprocessed/*R1*.fastq.gz)
+    r2_input=$(/bin/ls unprocessed/*R2*.fastq.gz)
+    input="${r1_input}:${r2_input}"
+    cyoa --method umi --input ${input}
+    cd $start
+done
+```
+
+The previous block serves to remove the UMI prefix of read2 and move
+that information to the suffix of the read ID.  I would argue that it
+should be put in the read comment, but whatever.  From that step, we
+perform the alignment as per usual, then use umi_tools dedup to
+exclude reads with the same ID which map to the same place, then count
+up the remaining reads/gene.
+
+I think the previous analysis did not perform the deduplication step,
+at least I have not yet found it in the logs.  As a result, I am going
+to do one round with and one without the deduplication.  My hope is
+that they will be:
+
+a. quite similar to each other
+b. the without-deduplication result will be nearly identical to the
+   previous set
+c. the with-deduplication step will slightly improve the results.
+
+Let's find out!
+
+# Mapping against the ensembl mus musculus 112 release
+
+Note, I could/should have piped the output of umi_tools directly into
+hisat, but I didn't.
+
+```{bash, eval=FALSE}
+cd preprocessing/umd_sequenced
+start=$(pwd)
+cd $start
+for i in $(/bin/ls -d iprgc*); do
+    cd $i
+    echo $i
+    input="outputs/01umi_tools/r1_extracted.fastq.gz:outputs/01umi_tools/r2_extracted.fastq.gz"
+    cyoa --method hisat --species mm39_112 --input ${input} --gff_type gene --gff_tag ID \
+         --stranded reverse
+    cyoa --method hisat --species mm39_112 --libtype rRNA --gff_type rRNA --gff_tag ID \
+         --stranded reverse --input ${input}
+    cd $start
+done
+```
+
+# Deduplication
+
+A note to self, here are the dedup options:
+
+    --output-stats=STATS
+                        Specify location to output stats
+
+  Barcode extraction options:
+    --extract-umi-method=GET_UMI_METHOD
+                        how is the read UMI +/ cell barcode encoded? [default=read_id]
+    --umi-separator=UMI_SEP
+                        separator between read id and UMI
+    --umi-tag=UMI_TAG   tag containing umi
+    --umi-tag-split=UMI_TAG_SPLIT
+                        split UMI in tag and take the first element
+    --umi-tag-delimiter=UMI_TAG_DELIM
+                        concatenate UMI in tag separated by delimiter
+    --cell-tag=CELL_TAG
+                        tag containing cell barcode
+    --cell-tag-split=CELL_TAG_SPLIT
+                        split cell barcode in tag and take the firstelement for e.g 10X GEM tags
+    --cell-tag-delimiter=CELL_TAG_DELIM
+                        concatenate cell barcode in tag separated by delimiter
+
+  UMI grouping options:
+    --method=METHOD     method to use for umi grouping [default=directional]
+    --edit-distance-threshold=THRESHOLD
+                        Edit distance theshold at which to join two UMIs when grouping UMIs. [default=1]
+    --spliced-is-unique
+                        Treat a spliced read as different to an unspliced one [default=False]
+    --soft-clip-threshold=SOFT_CLIP_THRESHOLD
+                        number of bases clipped from 5' end before read is counted as spliced [default=4]
+    --read-length       use read length in addition to position and UMI to identify possible duplicates [default=False]
+
+  single-cell RNA-Seq options:
+    --per-gene          Group/Dedup/Count per gene. Must combine with either --gene-tag or --per-contig
+    --gene-tag=GENE_TAG
+                        Gene is defined by this bam tag [default=none]
+    --assigned-status-tag=ASSIGNED_TAG
+                        Bam tag describing whether read is assigned to a gene By defualt, this is set as the same tag as --gene-tag
+    --skip-tags-regex=SKIP_REGEX
+                        Used with --gene-tag. Ignore reads where the gene-tag matches this regex
+    --per-contig        group/dedup/count UMIs per contig (field 3 in BAM; RNAME), e.g for transcriptome where contig = gene
+    --gene-transcript-map=GENE_TRANSCRIPT_MAP
+                        File mapping transcripts to genes (tab separated)
+    --per-cell          group/dedup/count per cell
+
+  group/dedup options:
+    --buffer-whole-contig
+                        Read whole contig before outputting bundles: guarantees that no reads are missed, but increases memory usage
+    --multimapping-detection-method=DETECTION_METHOD
+                        Some aligners identify multimapping using bam tags. Setting this option to NH, X0 or XT will use these tags when
+                        selecting the best read amongst reads with the same position and umi [default=none]
+
+  SAM/BAM options:
+    --mapping-quality=MAPPING_QUALITY
+                        Minimum mapping quality for a read to be retained [default=0]
+    --ignore-umi        Ignore UMI and dedup only on position
+    --ignore-tlen       Option to dedup paired end reads based solely on read1, whether or not the template length is the same
+    --chrom=CHROM       Restrict to one chromosome
+    --subset=SUBSET     Use only a fraction of reads, specified by subset
+    -i, --in-sam        Input file is in sam format [default=False]
+    --paired            paired input BAM. [default=False]
+    -o, --out-sam       Output alignments in sam format [default=False]
+    --no-sort-output    Don't Sort the output
+
+  Dedup and Count SAM/BAM options:
+    --unmapped-reads=UNMAPPED_READS
+                        How to handle unmapped reads. Options are 'discard' or 'use' [default=discard]
+    --chimeric-pairs=CHIMERIC_PAIRS
+                        How to handle chimeric read pairs. Options are 'discard' or 'use'  [default=use]
+    --unpaired-reads=UNPAIRED_READS
+                        How to handle unpaired reads. Options are 'discard'or 'use' [default=use]
+
+  input/output options:
+    -I FILE, --stdin=FILE
+                        file to read stdin from [default = stdin].
+    -L FILE, --log=FILE
+                        file with logging information [default = stdout].
+    -E FILE, --error=FILE
+                        file with error information [default = stderr].
+    -S FILE, --stdout=FILE
+                        file where output is to go [default = stdout].
+    --temp-dir=FILE     Directory for temporary files. If not set, the bash environmental variable TMPDIR is used[default = None].
+    --log2stderr        send logging information to stderr [default = False].
+    --compresslevel=COMPRESSLEVEL
+                        Level of Gzip compression to use. Default (6) matchesGNU gzip rather than python gzip default (which is 9)
+
+  profiling options:
+    --timeit=TIMEIT_FILE
+                        store timeing information in file [none].
+    --timeit-name=TIMEIT_NAME
+                        name in timing file for this class of jobs [all].
+    --timeit-header     add header for timing information [none].
+
+  common options:
+    -v LOGLEVEL, --verbose=LOGLEVEL
+                        loglevel [1]. The higher, the more output.
+    -h, --help          output short help (command line options only).
+    --help-extended     Output full documentation
+    --random-seed=RANDOM_SEED
+                        random seed to initialize number generator with [none].
+
+
+```{bash, eval=FALSE}
+umi_tools dedup --output-stats=umi_dedup_stats.txt \
+          --buffer-whole-contig -I mm39_112_genome.bam \
+          -L dedup.stdout -E dedup.stderr -S dedup.bam
+```
+
+I added a version of this to cyoa which also re-performs htseq and should be usable via:
+
+```{bash, eval=FALSE}
+cd preprocessing/umd_sequenced
+start=$(pwd)
+cd $start
+for i in $(/bin/ls -d iprgc*); do
+    cd $i
+    echo $i
+    input="outputs/40hisat_mm39_112/mm39_112_genome.bam"
+    cyoa --method umidedup --species mm39_112 --input ${input} --gff_type gene --gff_tag ID \
+         --stranded reverse
+    cd $start
+done
+```
+
+Note that I explicitly mapped against my mm39_112 rRNA database, but
+neglected to document how I made it, here are those commands:
+
+### Making a mouse rRNA database
+
+First I copied my full genome fasta and gff to /tmp/ just to make sure
+that if I messed up I would not hurt anything
+
+```{bash, eval=FALSE}
+cd /tmp
+cp ~/libraries/genome/fasta/mm39* .
+cp ~/libraries/genome/gff/mm39* .
+## Note, that when typing the following I actually type 'Control-v<tab>'
+grep "rRNA\t" mm39_112.gff > mm39_112_rrna.gff
+cyoa --method gff2fasta --input mm39_112.fasta --gff mm39_112_rrna.gff --gff_type rRNA --gff_tag ID
+```
+
+The above created a couple of new files which extracted from the full
+genome the amino acid and nucleotide sequences of all features in the
+gff which matched my requirements (the amino acid sequences were of
+course gibberish).  So, I copied these new fasta/gff files to my index
+tree and indexed them for hisat2:
+
+```{bash, eval=FALSE}
+## Still in /tmp/
+mv mm39_112_rrna.gff ~/libraries/rRNA/gff/mm39_112.gff
+mv mm39_112_nt_rRNA_ID.fasta ~/libraries/rRNA/fasta/mm39_112.fasta
+cyoa --method indexhisat --input ~/libraries/rRNA/fasta/mm39_112.fasta \
+     --gff ~/libraries/rRNA/gff/mm39_112.gff --libtype rRNA
+```
+
+That last command handles the invocation of the hisat2 indexer to
+create for me a mouse-specific rRNA database.
+
+# Bibliography

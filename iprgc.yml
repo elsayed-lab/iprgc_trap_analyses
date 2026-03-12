@@ -1,0 +1,102 @@
+Bootstrap: docker
+From: debian:stable
+
+## Order of sections:
+## %labels:      unknown, storing metadata
+## %files:       are before %post or installation procedures.
+## %setup:       in the host-system after base OS install.
+## %post:        in the container after base OS install.
+## %test:        run at end of build process.
+## %environment: sourced at runtime, not build; if needed at build, do it in %post.
+## %runscript:   writes the container file /singularity and is run via 'singularity run'
+
+%apphelp hpgltools_test
+echo "Run the hpgltools test suite."
+
+
+%apprun hpgltools_test
+echo "Running the hpgltools test suite."
+exec cd /data/hpgltools && make test
+
+
+%environment
+## If this works properly, I can delete the bashrc, apparently the contents of this stanza are
+## written to /.singularity.d/env/90-environment.sh
+## As of this writing, it appears VERSION is not propagated to the %post block, therefore
+## the definition is repeated there.
+. /usr/local/etc/bashrc
+
+
+## Instead of copying files within the setup section, one should use the files block, I think because
+## this is not run with elevated permissions.
+%files
+local/etc/bashrc /usr/local/etc/bashrc
+local/etc/deb_packages.txt /usr/local/etc/deb_packages.txt
+local/bin/bootstrap.R /usr/local/bin/bootstrap.R
+local/bin/bootstrap.sh /usr/local/bin/bootstrap.sh
+local/bin/runscript.sh /usr/local/bin/runscript.sh
+data/Makefile /data/Makefile
+data/renv.lock /data/renv.lock
+data/renv/activate.R /data/renv/activate.R
+data/renv/settings.json /data/renv/settings.json
+data/renv/.gitignore /data/renv/.gitignore
+data/human_ribosome_L22_red.png /data/human_ribosome_L22_red.png
+data/mmusculus_RPL22_green_center.png /data/mmusculus_RPL22_green_center.png
+data/README.Rmd /data/README.Rmd
+data/reference/README.md /data/reference/README.md
+data/sample_sheets/README.md /data/sample_sheets/README.md
+data/atb.bib /data/atb.bib
+data/iprgc_analyses_202408.Rmd /data/iprgc_analyses_202408.Rmd
+data/preprocessing.Rmd /data/preprocessing.Rmd
+data/taa_analyses.Rmd /data/taa_analyses.Rmd
+data/taa_bulk_analyses.Rmd /data/taa_bulk_analyses.Rmd
+data/initial_analyses.Rmd /data/initial_analyses.Rmd
+data/mmusculus_biomart_annotations.rda /data/mmusculus_biomart_annotations.rda
+data/preprocessing/deduplicated_counts.tar /data/preprocessing/deduplicated_counts.tar
+data/preprocessing/non_deduplicated_counts.tar /data/preprocessing/non_deduplicated_counts.tar
+data/preprocessing/symlink_counts.tar /data/preprocessing/symlink_counts.tar
+data/preprocessing/bulk_hisat_file.tar /data/preprocessing/bulk_hisat_file.tar
+data/preprocessing/bulk_salmon_file.tar.xz /data/preprocessing/bulk_salmon_file.tar.xz
+data/sample_sheets/20240606_only_umd_sequenced_modified.xlsx /data/sample_sheets/20240606_only_umd_sequenced_modified.xlsx
+data/sample_sheets/20240606_only_umd_sequenced.xlsx /data/sample_sheets/20240606_only_umd_sequenced.xlsx
+
+
+%help
+String printed when "singularity help image.simg" is run.
+
+
+%labels
+Maintainer Ashton Trey Belew <abelew@umd.edu>
+
+
+%post
+/usr/local/bin/bootstrap.sh
+
+
+%runscript
+/usr/bin/time -f '\t%E real,\t%U user,\t%S sys,\t%K amem,\t%M mmem' /usr/local/bin/runscript.sh "$*"
+
+
+## The setup block will be used to prepare material which I cannot acquire
+## automatically.  Ideally this should just create some directories for the container.
+##   ** NOTE ** This section is run as root! So be careful.
+%setup
+mkdir -p ${SINGULARITY_ROOTFS}/usr/local/bin
+mkdir -p ${SINGULARITY_ROOTFS}/usr/local/etc
+mkdir -p ${SINGULARITY_ROOTFS}/data/preprocessing
+mkdir -p ${SINGULARITY_ROOTFS}/data/sample_sheets
+mkdir -p ${SINGULARITY_ROOTFS}/output
+mkdir -p ${SINGULARITY_ROOTFS}/sw/local/R/renv_cache
+mkdir -p ${SINGULARITY_ROOTFS}/sw/modules
+mkdir -p ${SINGULARITY_ROOTFS}/sw/local/apt/cache
+mkdir -p ${SINGULARITY_ROOTFS}/sw/local/spack/cache
+if test -e "${HOME}/hpgltools"; then
+  mkdir -p ${SINGULARITY_ROOTFS}/data/hpgltools && rsync -av "${HOME}/hpgltools/" "${SINGULARITY_ROOTFS}/data/hpgltools/"
+else
+  mkdir -p ${SINGULARITY_ROOTFS}/data/hpgltools && git clone https://github.com/abelew/hpgltools "${SINGULARITY_ROOTFS}/data/hpgltools/"
+fi
+
+
+%test
+echo "Making sure hpgltools got installed."
+test -d "/data/hpgltools" || true

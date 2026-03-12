@@ -1,0 +1,598 @@
+---
+title: "An initial exploration of the IPRGC re-processed samples."
+author: "atb abelew@gmail.com"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_download: true
+    code_folding: show
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: zenburn
+    keep_md: false
+    mode: selfcontained
+    number_sections: true
+    self_contained: true
+    theme: readable
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+  rmdformats::readthedown:
+    code_download: true
+    code_folding: show
+    df_print: paged
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: zenburn
+    width: 300
+    keep_md: false
+    mode: selfcontained
+    toc_float: true
+  BiocStyle::html_document:
+    code_download: true
+    code_folding: show
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: zenburn
+    keep_md: false
+    mode: selfcontained
+    toc_float: true
+---
+
+<style type="text/css">
+body, td {
+  font-size: 16px;
+}
+code.r{
+  font-size: 16px;
+}
+pre {
+  font-size: 16px
+}
+body .main-container {
+  max-width: 1600px;
+}
+</style>
+
+```{r options, include=FALSE}
+library(hpgltools)
+library(ggplot2)
+library(ggstatsplot)
+tt <- try(devtools::load_all("~/hpgltools"))
+knitr::opts_knit$set(
+  progress = TRUE, verbose = TRUE, width = 90, echo = TRUE)
+knitr::opts_chunk$set(
+  error = TRUE, fig.width = 8, fig.height = 8, fig.retina = 2,
+  out.width = "100%", dev = "png",
+  dev.args = list(png = list(type = "cairo-png")))
+old_options <- options(digits = 4, stringsAsFactors = FALSE, knitr.duplicate.label = "allow")
+ggplot2::theme_set(ggplot2::theme_bw(base_size = 12))
+ver <- "202406"
+previous_file <- ""
+ver <- format(Sys.Date(), "%Y%m%d")
+
+##tmp <- sm(loadme(filename=paste0(gsub(pattern="\\.Rmd", replace="", x=previous_file), "-v", ver, ".rda.xz")))
+rmd_file <- "initial_analyses.Rmd"
+```
+
+# Meeting with Theresa
+
+Previous papers did not do an explicit subtraction, instead just
+compared to WT and kept the genes which are > in delta/het vs. wt.
+There are multiple ways to deal with this and that query has not yet
+been defined.  Later, Theresa came to the conclusion that the
+subtraction method is not appropriate.
+
+# Introduction
+
+In this document I hope to explore the freshly processed samples and
+perform some comparisons to see that we have the expected similarities
+and differences from the prior analysis performed by Theresa.
+
+There is one way in which I expect any/all of these analyses to be
+explicitly different: this should include the changes produced by
+April's renaming of some samples.
+
+My intention is to produce a sample sheet which includes one column
+with non-umi-deduplicated results and one with deduplicated results.
+With the exception of the previous point, I hope that the first will
+be identical (or at least very close to identical) to Theresa's result
+while the second I expect will be subtly different -- but I am hoping
+subtly enough that it will not significantly change the interpretation
+but be a little more precise.
+
+Lets see!  I need therefore to make a change to my metadata gathering
+function to include the umi deduplicated result.  I am thinking
+therefore to create a separate specification for umi-barcoded samples
+because looking through the logs for umi stuff when they are not used
+will be too much of a pain...
+
+```{r}
+umi_spec <- make_rnaseq_spec(umi = TRUE)
+iprgc_2022_meta <- gather_preprocessing_metadata("sample_sheets/20240606_only_umd_sequenced.xlsx",
+                                                 spec = umi_spec, species = "mm39_112", verbose = FALSE,
+                                                 basedir = "preprocessing/umd_sequenced")
+```
+
+From this point on, I am hoping/intending to pull liberally from
+Theresa's notebook with a diversion to compare the three datasets:
+
+* Pre-April renaming: E.g. Theresa's current dataset
+* Post renaming: Unless I am mistaken, this should be very similar to
+  the above.
+* Post deduplication: Given what I saw from the extracted logs in the
+  sample sheet, I expect this to be similar but not identical to the
+  previous two.
+
+Lets find out!   But first, annotations!
+
+# Annotation data
+
+I am pulling this from Theresa's anxontrapR_pipeline.Rmd, primarily
+because it looks similar to the other documents, but was modified more
+recently.  I will change it slightly, primarily because I grabbed a
+new mmusculus assembly and therefore I will pull the mmusculus
+annotations from a specific biomart archive that should match it.
+
+```{r}
+mm_annot <- load_biomart_annotations(species = "mmusculus", year = "2023", month = "02")
+mm_annot <- mm_annot[["annotation"]]
+mm_annot[["txid"]] <- paste0(mm_annot[["ensembl_transcript_id"]], ".", mm_annot[["version"]])
+rownames(mm_annot) <- make.names(mm_annot[["ensembl_gene_id"]], unique=TRUE)
+tx_gene_map <- mm_annot[, c("txid", "ensembl_gene_id")]
+```
+
+# Hisat2 expressionsets
+
+The primary difference between my block and Theresa's are:
+
+1.  I am pulling the metadata directly from the
+    gather_preprocessing_metadata() above.
+2.  I am using the column 'symlink' which is just a copy of the
+    existing 'file' column with a small change so I can load it from
+    my directory without having to copy everything.
+3.  I am using the ensembl genome release 39, version 112 and so
+    pulled a somewhat newer copy of the annotation data.
+4.  The original is named 'v1', followed by 'v2' and 'v3' for the
+    other two treatments I performed.
+
+## Color choices
+
+Given that we are excluding a bunch of the older samples, the set of
+colors I expect to find is different; so I will make explicit here the
+various colors used to denote location/genotype/time/etc.
+
+April turned me onto this website 'paletton.com' for this kind of
+stuff and I will try and pick out palettes which basically match what
+I am getting with the original colors.
+
+```{r}
+color_choices <- list(
+  "geno_loc" = list(
+    "het_dlgn" = "#9ECAE1",
+    "het_retina" = "#F46D43",
+    "het_scn" = "#2CA25F",
+    "ko_dlgn" = "#3182BD",
+    "ko_retina" = "#FDAE61",
+    "ko_scn" = "#006D2C",
+    "wt_dlgn" = "#DEEBF7",
+    "wt_retina" = "#D73027",
+    "wt_scn" = "#66C2A4"),
+  ## These colors are coming from ipRGC_summaryplots.html
+  ## I am using kcolorchooser to grab them rather than get confused by the text
+  "location" = list(
+    "retina" = "#d73027",
+    "dlgn" = "#3182bd",
+    "scn" = "#006b29"),
+  "genotype" = list(
+    "wt" = "#D4D4D4",
+    "het" = "#787878",
+    "ko" = "#313131"),
+  "time" = list(
+    "p08" = "#5E104B",
+    "p15" = "#4E9231"))
+```
+
+There is one noteworthy sample: iprgc_103, it was effectively replaced
+when April renamed the samples and so exists in the v1 data, but not
+v2/v3; they instead have the newly named samples which I called
+iprgc_123 to iprgc_130.  As a result, I copied the annotations for
+iprgc_123 to my column so that there is no discrepency in terms of
+genotype/location/time.
+
+```{r}
+mm38_hisat_v1 <- create_expt(iprgc_2022_meta[["new_meta"]],
+                             gene_info = mm_annot,
+                             file_column = "symlink") %>%
+  set_expt_conditions(fact = "genolocatb") %>%
+  set_expt_batches(fact = "timeatb") %>%
+  set_expt_colors(color_choices[["geno_loc"]])
+mm38_hisat_v1
+
+mm38_hisat_v2 <- create_expt(iprgc_2022_meta[["new_meta"]], gene_info = mm_annot,
+                             file_column = "hisat_count_table") %>%
+  set_expt_conditions(fact = "genolocatb") %>%
+  set_expt_batches(fact = "timeatb") %>%
+  set_expt_colors(color_choices[["geno_loc"]])
+mm38_hisat_v2
+
+mm38_hisat_v3 <- create_expt(iprgc_2022_meta[["new_meta"]], gene_info = mm_annot,
+                             file_column = "umi_dedup_output_count") %>%
+  set_expt_conditions(fact = "genolocatb") %>%
+  set_expt_batches(fact = "timeatb") %>%
+  set_expt_colors(color_choices[["geno_loc"]])
+mm38_hisat_v3
+```
+
+# Non-zero Counts per Sample
+
+Let's look at the number of non-zero genes for all samples versus the
+coverage.
+
+```{r}
+plot_legend(mm38_hisat_v1)
+
+v1_nonzero <- plot_nonzero(mm38_hisat_v1)
+v1_nonzero
+
+v2_nonzero  <- plot_nonzero(mm38_hisat_v2)
+v2_nonzero
+
+v3_nonzero  <- plot_nonzero(mm38_hisat_v3)
+v3_nonzero
+```
+
+Oh wow, I did not expect such a profound effect on the cpm values on
+the more saturated libraries.  I guess in retrospect I should have?
+
+Also note to self, we are not messing with p60.
+
+```{r}
+mm38_hisat_v1 <- subset_expt(mm38_hisat_v1, subset = "timeatb!='p60'")
+mm38_hisat_v2 <- subset_expt(mm38_hisat_v2, subset = "timeatb!='p60'")
+mm38_hisat_v3 <- subset_expt(mm38_hisat_v3, subset = "timeatb!='p60'")
+```
+
+# Quick PCA, then return to Theresa's document
+
+```{r}
+v1_norm <- normalize_expt(mm38_hisat_v1, transform = "log2", convert = "cpm",
+                          norm = "quant", filter = TRUE)
+v2_norm <- normalize_expt(mm38_hisat_v2, transform = "log2", convert = "cpm",
+                          norm = "quant", filter = TRUE)
+v3_norm <- normalize_expt(mm38_hisat_v3, transform = "log2", convert = "cpm",
+                          norm = "quant", filter = TRUE)
+
+plot_pca(v1_norm)
+plot_pca(v2_norm)
+plot_pca(v3_norm)
+```
+
+To my eyes it looks like we just have 1 weirdo p15 sample?
+Deduplication had a minor but significant effect on the PCA.
+
+With that in mind, let us look at Theresa's WORKING document and see
+what we can recapitulate.
+
+Theresa's document: The TRAP protocol has some variability which is
+introduced at different steps including homogenization, antibody
+labeling, pulldown efficiency/specificity, sample handling during
+cleanup steps, and library prep/sequencing. We know from Rashmi's QC
+that there is variability at the level of pulldown efficiency (amount
+of RNA isolated). She is doing a good job of keeping track of this for
+all her samples and we have validated her P8 results (attached
+supplementary figure 3D). We consistently see clear differences
+between control and cre samples for the retina, which makes sense
+because the cell bodies are in the retina. The target tissue
+differences are smaller, which also makes sense for axon-TRAP. We
+think that some of her P15 samples are not good based on low amounts
+of isolated RNA from cre(+) retina samples. We plan to drop these
+samples and not perform additional isolations at this time
+point. Based on this (and the general lack of large developmental
+effects), we were planning to focus on presenting the P8 data only in
+the paper. Interested to hear your thoughts in this...
+
+My notes: Theresa's first operations in this notebook were to:
+
+1.  Set location as condition, genotype as batch.
+2.  Perform PCA before/after sva.
+
+```{r}
+v3_loc_geno <- set_expt_conditions(mm38_hisat_v3, fact = "locationatb",
+                                   colors = color_choices[["location"]]) %>%
+  set_expt_batches(fact = "genotypeatb")
+```
+
+## The associated PCA
+
+At different times, it appears to me that Theresa has preferred
+slightly different normalization methods, primarily a mix of TMM and
+quantile.
+
+Thus I will use different suffix letters to denote various
+normalizations employed, and if they turn out the same I will pick one arbitrarily.
+
+```{r}
+loc_geno_nq <- normalize_expt(v3_loc_geno, transform = "log2", convert = "cpm",
+                              filter = TRUE, norm = "quant")
+plot_pca(loc_geno_nq)
+## ok, I have two weirdo samples which look very much like they are actually dlgn.
+## These are sample IDs iprgc_66 and iprgc_130
+
+loc_geno_nt <- normalize_expt(v3_loc_geno, transform = "log2", convert = "cpm",
+                             filter = TRUE, norm = "tmm")
+plot_pca(loc_geno_nt)
+```
+
+A random thought about these PCA plots, it might be worth while to add
+a panel below the legend with the sample numbers per condition/batch.
+
+Of course, the same information is provided in a more fun fashion via
+my silly sankey function:
+
+```{r}
+sample_sankey <- plot_meta_sankey(v3_loc_geno, color_choices = color_choices,
+                                  factors = c("genotypeatb", "locationatb", "timeatb"))
+sample_sankey
+```
+
+# A Short conversation with Rashmi
+
+Rashmi came by and we discussed the samples a little.  She suggested
+that is likely that we will need to exclude the 202205 samples, these
+may be identified by a few ways, most easily I think via the
+'projectah' column, they are the 021_1 samples.
+
+My sense was that she concurred with my interpretation of the umi
+deduplication, so I will continue using the deduplicated results
+exclusively, at least for now.
+
+# Melanopsin Sanity Check
+
+One of Theresa's first checks was wisely for melanopsin.  Let us
+repeat a version of this:
+
+```{r}
+opn4_exprs <- data.frame(combined = pData(loc_geno_nt)[["genolocatb"]],
+                         location = pData(loc_geno_nt)[["locationatb"]],
+                         genotype = pData(loc_geno_nt)[["genotypeatb"]],
+                         opn = exprs(loc_geno_nt)["ENSMUSG00000021799", ])
+
+groupedstats::grouped_summary(opn4_exprs, location, opn)
+ggbetweenstats(data = opn4_exprs, x = location, y = opn)
+ggbetweenstats(data = opn4_exprs, x = genotype, y = opn)
+ggbetweenstats(data = opn4_exprs, x = combined, y = opn)
+```
+
+ok, so I plotted the question a bit differently, but got the same
+answer.
+
+Here is the text of Theresa's notebook following this analysis:
+
+"Ugh oh, looks like there is at least one retina KO sample that has
+some melanopsin expression in it. Turns out ipRGC_07 is a bad egg
+which is supposed to be a KO but has melanopsin expression. It’s
+friends which were pooled from the same mice are iprgc_06 and
+iprgc_08, so we need to exclude all these samples."
+
+I am also seeing some knockout expression with some caveats: I do not
+have the affected samples in my dataset (iprgc_07) and the levels I am
+seeing are quite low -- I will look in IGV to double check, but I
+strongly suspect that these are some piddly reads near the UTRs.
+
+Onward!
+
+# Library sizes post-deduplication
+
+Theresa's next operation was to perform libsize/nonzero plots.  I
+already did the pre/post deduplication nonzero, here is the analagous
+libsize.
+
+v2 is pre-deduplication and v3 is post.
+
+```{r}
+plot_libsize(mm38_hisat_v2)
+plot_libsize(mm38_hisat_v3)
+```
+
+I am a bit concerned about some of these library sizes
+post-deduplication.
+
+Let us look at the relationship between reads and duplication, which I
+assume will be relatively linear.
+
+```{r}
+test <- pData(mm38_hisat_v3)[, c("hisatgenomesingleall", "umideduppctreads")]
+test_plot <- plot_linear_scatter(test)
+test_plot[["scatter"]]
+```
+
+Theresa also produced a density/sample plot, that might prove quite
+useful for these due to their significantly larger variance across
+samples (due to deduplication).
+
+```{r}
+plot_density(mm38_hisat_v3)
+```
+
+There is some difference across sample densities, but it is not too
+crazytown.
+
+# PCA plots
+
+## PCA of all genes by location
+
+Theresa's first pca was of log2 cpm values.  I might add quantile/tmm
+to this?
+
+```{r}
+v3_location <- set_expt_conditions(mm38_hisat_v3, fact = "locationatb") %>%
+  set_expt_batches(fact = "genotypeatb")
+
+v3_location_norm <- normalize_expt(v3_location, filter = TRUE, norm = "quant",
+                                   transform = "log2", convert = "cpm")
+plot_pca(v3_location_norm)
+```
+
+Once again we see that samples iprgc_66 and iprgc_130 are likely
+actually DLGN and not SCN.  I am therefore going to add a column to
+the sample sheet noting this, and remove them from the expressionset.
+
+I will thus replot the data after removing those two.  If we want to
+see what it looks like with the re-attributed locations, we can do so.
+
+Theresa has a nice change to the PCA plotter in which she sets the
+alpha channel as an additional visual queue for a metadata factor...
+
+```{r}
+mm38_hisat_v3 <- subset_expt(mm38_hisat_v3, subset="sampleid!='iprgc_130'") %>%
+  subset_expt(subset="sampleid!='iprgc_66'")
+v3_location <- set_expt_conditions(mm38_hisat_v3, fact = "locationatb") %>%
+  set_expt_batches(fact = "genotypeatb")
+v3_location_norm <- normalize_expt(v3_location, filter = TRUE, norm = "quant",
+                                   transform = "log2", convert = "cpm")
+plot_pca(v3_location_norm)
+
+removed_sankey <- plot_meta_sankey(v3_location, color_choices = color_choices,
+                                   factors = c("genotypeatb", "locationatb", "timeatb"))
+removed_sankey
+```
+
+Here is Theresa's text, recall once again that I do not have some of
+these older samples (iprgc_62):
+
+PC1 vs PC2 identifies retina vs axon is still the main component of
+variation. We do see though that in the PC2 direction, we see with the
+new samples added, we don’t see separation based on axonal targets
+(dLGN vs SCN). In the PC1 vs PC3 plot, we see that it’s PC3 where we
+start to see variation correlated with axonal compartment. Let’s look
+at PC1 vs PC2 colored by batch (when they were processed/sequenced) to
+see if that is what is contributing so much variation in PC2.
+
+Side note: ipRGC 62 seems like an odd ball. This seems to me like it
+should have been a dLGN P08 sample. Is there any possibility this got
+mislabeled early on? I went back and double checked to see if all my
+processing is correct and it indeed was labeled an SCN P15 from the
+time I got the samples, and it is indeed.
+
+# DE
+
+I now switched to Theresa's document 'WORKING_axonTRAP...' and will
+start pulling sections from it.  I am reasonably certain I have
+reasonably similar sample distributions, so I presume I can invoke
+similar/identical calls for DESeq and friends.
+
+## p8 retinas
+
+In the block immediately before the DE analyses, Theresa created a
+subset expressionset of only p08 retinas.  Thus this initial DE I
+assume will be used to subtract for the SCN/DLGN analyses that follow.
+(I guess I could read ahead and find out, but no! I want to be a
+blank slate)
+
+```{r}
+mm38_p8_retina <- subset_expt(mm38_hisat_v3, subset = "timeatb=='p08' & locationatb=='retina'")
+
+mm_normal_p8_ret_de <- all_pairwise(mm38_p8_retina, model_batch = "svaseq", filter = TRUE)
+mm_normal_p8_ret_de
+```
+
+The following invocation performed by Theresa filters the wt/het
+comparison for only those genes which increased by at least 0.25 logFC
+with a significant adjusted p-value.  I assume that this is to use the
+wt samples as a translational control for the ket/ko comparisons; I am
+therefore thinking that for my purposes, I will therefore separate the
+contrasts from all_pairwise do this in a stepwise fashion...
+
+The block of code immediately following Theresa's all_pairwise()
+invocation is a little confusing for me and warrants some explanation
+by me to me in the hopes that I do not misunderstand what is happening
+and the goals therein.
+
+Here is Theresa's next line:
+
+```{r, eval=FALSE}
+hetkeeper_genes <- mm_de_normal_p8_ret$deseq$all_tables$wtretina_vs_hetretina %>%
+  filter(logFC <= -.25 & adj.P.Val <= 0.05)
+```
+
+I think I can safely assume that the goal here is to pull out the IDs
+which increased in het with respect to wild type; even if by a small
+margin, as long as it is statistically significant vis a vis the
+adjusted p-value.
+
+I am going to perform what I think is the same thing in a slightly
+different fashion so that I can share a copy of the results with
+whomever is interested.  I will also repeat Theresa's invocation and
+prove to myself that I understood and got the same answer.
+
+```{r}
+wt_het_keeper <- list("het_vs_wt" = c("hetretina", "wtretina"))
+het_wt_table <- combine_de_tables(mm_normal_p8_ret_de, keepers = wt_het_keeper,
+                                  excel = "excel/het_retina_control.xlsx")
+
+wanted_sig <- extract_significant_genes(het_wt_table,
+                                        lfc = 0.25,
+                                        according_to = "deseq")
+
+wanted_het_increased <- wanted_sig[["deseq"]][["ups"]][["het_vs_wt"]]
+increased_het_genes <- rownames(wanted_het_increased)
+```
+
+## Prove I understood
+
+```{r}
+hetkeeper_genes <- mm_normal_p8_ret_de$deseq$all_tables$wtretina_vs_hetretina %>%
+  filter(logFC <= -0.25 & adj.P.Val <= 0.05)
+testthat::expect_true(nrow(hetkeeper_genes) == length(increased_het_genes))
+```
+
+Yay! I can read!  Now let us repeat for the KO vs wt
+
+```{r}
+wt_ko_keeper <- list("ko_vs_wt" = c("koretina", "wtretina"))
+ko_wt_table <- combine_de_tables(mm_normal_p8_ret_de, keepers = wt_ko_keeper,
+                                 excel = "excel/ko_retina_control.xlsx")
+wanted_sig <- extract_significant_genes(ko_wt_table,
+                                        lfc = 0.25,
+                                        according_to = "deseq")
+wanted_ko_increased <- wanted_sig[["deseq"]][["ups"]][["ko_vs_wt"]]
+increased_ko_genes <- rownames(wanted_ko_increased)
+```
+
+The next thing performed in Theresa's document is a unique(concatenation of
+these two gene groups), thus sucking up every gene which was
+significantly higher in either the knockout _or_ heterzyous samples
+with respect to wild-type.
+
+This was followed by a couple of merge operations of a little bit of
+the annotation data; I am not sure I understand the goal yet...
+
+Here is her code:
+
+```{r, eval=FALSE}
+keepergenes <- unique(c(rownames(hetkeeper_genes), rownames(kokeeper_genes)))
+
+annots_to_merge <- mm_annot %>%
+    select(ensembl_gene_id, external_gene_name) %>%
+    filter(ensembl_gene_id %in% rownames(mm_de_normal_p8_ret$deseq$all_tables$koretina_vs_hetretina)) %>%
+    distinct()
+
+mm_de_normal_p8_ret$deseq$all_tables$koretina_vs_hetretina <- merge(mm_de_normal_p8_ret$deseq$all_tables$koretina_vs_hetretina, annots_to_merge,
+                                                                by.x = 0,
+                                                                by.y = "ensembl_gene_id",
+                                                                all.x = TRUE)
+
+df <- mm_de_normal_p8_ret$deseq$all_tables$koretina_vs_hetretina %>%
+    dplyr::mutate(logFC = -logFC) %>%
+    set_sig_limma(factors = c("Het Enriched",
+                              "KO Enriched"))
+```
+
+```{r}
+both_increased_genes <- unique(c(increased_het_genes, increased_ko_genes))
+```
