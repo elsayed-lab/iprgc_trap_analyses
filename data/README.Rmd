@@ -107,6 +107,111 @@ symlink_tarball <-  tar_meta_column("sample_sheets/20240606_only_umd_sequenced_m
 ```
 
 
+# Output organization
+
+This iteration of the iprgc analyses adopted a peculiar organization
+strategy.  Each set of images/xlsx/etc files produced goes into a
+separate numeric prefixed directory.
+
+I did this primarily in an attempt to make clear the distinction
+between observations before removing genes higher in the wt
+samples vs. after wt removal.
+
++ 01diagnostic_images: The set of plots taken before doing pretty much
+  anything else.  This includes showing the differences between
+  pre/post umi-deduplication, clustering before removing the
+  problemat samples (either due to low coverage or seriously
+  inappropriate sample clustering).  Note: all of plots of the 'v1'
+  data are excluded; they are sufficiently redundant that I dropped
+  them.
++ 02filtered_images: Mostly a repetition of the 01 directory, but now
+  the final set of samples/genes which survived filtering.  If we were
+  to use any of the diagnostic images as supplemental, they would be
+  here. (none were)
++ 03theresa_comparison_excel: This document was intended as a simple
+  transcription of Theresa's notebook before I started messing with
+  it.  This directory is intended to trace back and show that the
+  results I am getting are very similar to Theresa's -- which is true,
+  but there are some differences introduced by the slightly different
+  filtering performed and the usage of UMI deduplicated inputs.
++ In the notebook, after the 03 section, there is a large number of
+  not-run blocks.  These are copy/pasted from Theresa's notebook and
+  provide the starting point for my changes.  I am pretty sure they
+  all still work and one is welcome to run them.
++ 04inclusion_comparisons: Every informative comparison against wt
+  samples resides here.  We have in these files every gene which is
+  highly observed in the wt samples, and as such, are expected to be
+  the result of mRNAs non-specifically binding during the TRAP
+  experiment.
++ 05inclusion_volcano_ma: Plots of the 04 results.  A quick and easy
+  way to get a feeling for what was non specific.  We kind of
+  hope to see a grab-bag of randomness here.
++ (hah I cannot count, there is no 06 directory), I think I had one
+  with gprofiler of the wt stuff, but deleted it.
++ 07included_strict_genes_excel: A large xlsx file of all high-wt gene
+  IDs.
++ 08full_contrasts_excel: The large xlsx output files comparing
+  everything which is _not_ wt.  E.g. this has the heterozygous and
+  knockout comparisons of genotype, location, and time.  No genes were
+  excluded from these tables.
++ 09full_contrasts_intersections: The set of intersections of genes
+  among the not-filtered comparisons.
++ 10genotype_contrasts_excel: This is effectively a copy of the 08
+  files, but with only those genes higher in the het/ko samples than
+  their corresponding wt samples.  E.g. this take the 08 results and
+  keeps only the stuff in the 07 directory.
++ 11enrichment_excel: The various results from clusterProfiler and
+  gProfiler2, these take the genes in the of significant (p <= 0.05,
+  |lfc| >= 1.0 or whatever) set from the 10genotype_contrasts_excel
+  directory and pass them to the over-enrichment and gene set analyses
+  against a mix of GO, reactome, transcription-factors, miRNA, KEGG,
+  mSigDB, etc...
++ 12clusterprofiler_plots: Plots from 11.
++ 13genotype_ma_volcano: MA and volcano plots of the ko/het
+  comparisons in pdf format.  These include labels of specific genes
+  of particular interest.
++ 14genotype_strict_contrasts_excel: A repetition of 10 above, but
+  with a stricter definition of 'significant'.
++ 15: xlsx output from clusterProfiler/gProfiler2 of the results from
+  14.
++ 16clusterProfiler_plots: Plots from 15.
++ 17full_location_contrasts: The tables comparing paired genotype
+  sampletypes by location (retina, dlgn, scn).  These tables do not
+  remove any genes observed higher in their corresponding wt.
++ 18location_contrasts: Post filtering copies of 17.
++ 19: The xlsx outputs of gProfiler2/clusterProfiler for 18.
++ 19clusterProfiler_plots: (I think this should be 20): Plots from 19.
++ 20location_ma_volcano: MA/volcano plots from 18.
++ 21location_strict_contrasts: Same as 14, but for the locations
+  (stricter p-value/lfc).
++ 22: Ontology etc. results from 21.
++ 23clusterProfiler_plots: Plots from 22.
++ 24location_ma_volcano_strict: Same as 20, but stricter.
++ 25full_contrasts_time: Same as 17, but this time comparing across
+  p08 and p15.
++ 26time_contrasts: Excluding the high-wt from 25.
++ 27: The ontology xlsx files from 26.
++ 28clusterProfiler_plots: The plots from 27.
++ 29time_ma_volcano: MA/volcano plots from 26.
++ 30time_strict_contrasts_excel: Repeating the strict fc/p call for
+  the time comparisons.
++ 31: The ontology xlsx files from 30.
++ 32: Plots of 31.
++ 33translatome_xlsx: xlsx results of unfiltered a/b / c/d comparisons: the
+  translatomes.  Note: there is a pre/post sva version of this because
+  of the complexity of these contrasts.  This includes a peculiar
+  subtraction I did using the deseq results.
++ 34translatome_deseqsub_xlsx: 33, but using the DESeq2 results to
+  exclude genes.
++ 35translatome_union: Using unions/intersections to filter genes.
++ 36upset_genotype: Getting groups of genes by union/intersection from
+  upset.
++ 37upset_location: Ibid but the locations.
++ 38msigdb: Using GSVA to compare the results against the mh/m1/etc
+  gene sets from the mSigDB revision 2024.  I am not sure about the
+  legality of this and may have removed it.
+
+I tried out some random stuff after #38 but did not write the results.
 
 # Roadmap
 
