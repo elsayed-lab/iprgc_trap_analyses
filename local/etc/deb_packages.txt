@@ -27,6 +27,7 @@ libnetcdf-dev
 libopenblas-dev
 librsvg2-dev
 libtiff-dev
+libuv1-dev
 libxft-dev
 pandoc
 pandoc-citeproc-preamble

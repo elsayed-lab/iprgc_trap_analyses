@@ -2827,10 +2827,10 @@ for (k in seq_along(genotype_keepers)) {
   if (num_rows >= 10) {
     message("Performing gprofiler/clusterProfiler.")
     genotype_gp[[name]] <- all_gprofiler(genotype_sig[[name]], species = "mmusculus")
-    genotype_cp[[name]] <- all_cprofiler(genotype_sig[[name]], genotype_tables[[name]],
-                                         orgdb = "org.Mm.eg.db", orgdb_from = orgdb_from,
-                                         go_level = go_level,
-                                         max_groupsize = max_groupsize, organism = "mouse")
+    genotype_cp[[name]] <- all_cprofiler(
+      genotype_sig[[name]], genotype_tables[[name]],
+      orgdb = "org.Mm.eg.db", orgdb_from = orgdb_from,
+      go_level = go_level, max_groupsize = max_groupsize, organism = "mouse")
     #if (!is.null(get0("m2_gsc"))) {
     #  genotype_en[[name]] <- all_enricher(genotype_sig[[name]], gsc = m2_gsc,
     #                                      orgdb = "org.Mm.eg.db", from = "ENSEMBL", to = "SYMBOL")
@@ -3269,10 +3269,10 @@ for (k in seq_along(genotype_keepers)) {
   if (num_rows >= 10) {
     message("Performing gprofiler/clusterProfiler.")
     genotype_strict_gp[[name]] <- all_gprofiler(genotype_strict_sig[[name]], species = "mmusculus")
-    genotype_strict_cp[[name]] <- all_cprofiler(genotype_strict_sig[[name]], genotype_strict_tables[[name]],
-                                                orgdb = "org.Mm.eg.db", go_level = go_level,
-                                                orgdb_from = orgdb_from,
-                                                max_groupsize = max_groupsize, organism = "mouse")
+    genotype_strict_cp[[name]] <- all_cprofiler(
+      genotype_strict_sig[[name]], genotype_strict_tables[[name]],
+      orgdb = "org.Mm.eg.db", go_level = go_level,
+      orgdb_from = orgdb_from, max_groupsize = max_groupsize, organism = "mouse")
     #if (!is.null(get0("m2_gsc"))) {
     #  genotype_strict_en[[name]] <- all_enricher(genotype_strict_sig[[name]], gsc = m2_gsc,
     #                                      orgdb = "org.Mm.eg.db", from = "ENSEMBL", to = "SYMBOL")
@@ -3436,10 +3436,10 @@ for (k in seq_along(location_keepers)) {
   message("There are ", num_rows, " significant up and down genes.")
   if (num_rows > 10) {
     location_gp[[name]] <- all_gprofiler(location_sig[[name]], species = "mmusculus")
-    location_cp[[name]] <- all_cprofiler(location_sig[[name]], location_tables[[name]],
-                                         orgdb = "org.Mm.eg.db", go_level = go_level,
-                                         orgdb_from = orgdb_from,
-                                         max_groupsize = max_groupsize, organism = "mouse")
+    location_cp[[name]] <- all_cprofiler(
+      location_sig[[name]], location_tables[[name]],
+      orgdb = "org.Mm.eg.db", go_level = go_level, orgdb_from = orgdb_from,
+      max_groupsize = max_groupsize, organism = "mouse")
     cp_written <- write_all_cp(location_cp[[name]], prefix = "19")
     gp_written <- write_all_gp(location_gp[[name]], prefix = "19")
   }
@@ -3721,10 +3721,10 @@ for (k in seq_along(location_keepers)) {
   message("There are ", num_rows, " significant up and down genes.")
   if (num_rows > 10) {
     location_strict_gp[[name]] <- all_gprofiler(location_strict_sig[[name]], species = "mmusculus")
-    location_strict_cp[[name]] <- all_cprofiler(location_strict_sig[[name]], location_strict_tables[[name]],
-                                                orgdb = "org.Mm.eg.db", go_level = go_level,
-                                                orgdb_from = orgdb_from,
-                                                max_groupsize = max_groupsize, organism = "mouse")
+    location_strict_cp[[name]] <- all_cprofiler(
+      location_strict_sig[[name]], location_strict_tables[[name]],
+      orgdb = "org.Mm.eg.db", go_level = go_level, orgdb_from = orgdb_from,
+      max_groupsize = max_groupsize, organism = "mouse")
     cp_written <- write_all_cp(location_strict_cp[[name]], prefix = "22", suffix = "strict")
     gp_written <- write_all_gp(location_strict_gp[[name]], prefix = "22", suffix = "strict")
   }
@@ -3954,7 +3954,7 @@ for (k in seq_along(time_keepers)) {
   print(time_tables[[name]])
   time_sig[[name]] <- extract_significant_genes(
     time_tables[[name]], according_to = "deseq",
-    excel = include_filename)
+    excel = include_sig_filename)
   print(time_sig[[name]])
   num_rows <- nrow(time_sig[[name]][["deseq"]][["ups"]][[name]]) +
     nrow(time_sig[[name]][["deseq"]][["downs"]][[name]])
@@ -3962,10 +3962,9 @@ for (k in seq_along(time_keepers)) {
   if (num_rows > 10) {
     time_gp[[name]] <- all_gprofiler(time_sig[[name]], species = "mmusculus")
     gp_written <- write_all_gp(time_gp[[name]])
-    time_cp[[name]] <- all_cprofiler(time_sig[[name]], time_tables[[name]],
-                                     orgdb = "org.Mm.eg.db", organism = "mouse",
-                                     orgdb_from = orgdb_from,
-                                     go_level = go_level, max_groupsize = max_groupsize)
+    time_cp[[name]] <- all_cprofiler(
+      time_sig[[name]], time_tables[[name]], orgdb = "org.Mm.eg.db", organism = "mouse",
+      orgdb_from = orgdb_from, go_level = go_level, max_groupsize = max_groupsize)
     cp_written <- write_all_cp(time_cp[[name]], prefix = "27")
     gp_written <- write_all_gp(time_gp[[name]], prefix = "27")
   }
@@ -4253,10 +4252,10 @@ for (k in seq_along(time_keepers)) {
   if (num_rows >= 10) {
     message("Performing gprofiler/clusterProfiler.")
     time_strict_gp[[name]] <- all_gprofiler(time_strict_sig[[name]], species = "mmusculus")
-    time_strict_cp[[name]] <- all_cprofiler(time_strict_sig[[name]], time_strict_tables[[name]],
-                                            orgdb = "org.Mm.eg.db", go_level = go_level,
-                                            orgdb_from = orgdb_from,
-                                            max_groupsize = max_groupsize, organism = "mouse")
+    time_strict_cp[[name]] <- all_cprofiler(
+      time_strict_sig[[name]], time_strict_tables[[name]],
+      orgdb = "org.Mm.eg.db", go_level = go_level, orgdb_from = orgdb_from,
+      max_groupsize = max_groupsize, organism = "mouse")
     #if (!is.null(get0("m2_gsc"))) {
     #  time_strict_en[[name]] <- all_enricher(time_strict_sig[[name]], gsc = m2_gsc,
     #                                      orgdb = "org.Mm.eg.db", from = "ENSEMBL", to = "SYMBOL")
