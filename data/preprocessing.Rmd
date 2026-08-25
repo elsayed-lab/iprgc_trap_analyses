@@ -2,7 +2,6 @@
 title: "Preprocessing the IPRGC samples de-novo."
 author: "atb abelew@gmail.com"
 date: "`r Sys.Date()`"
-bibliography: atb.bib
 output:
   html_document:
     code_download: true
@@ -548,5 +547,15 @@ cyoa --method indexhisat --input ~/libraries/rRNA/fasta/mm39_112.fasta \
 
 That last command handles the invocation of the hisat2 indexer to
 create for me a mouse-specific rRNA database.
+
+# Transcript aware comparisons and splicing changes
+
+There are a couple of ways which were applied to compare the data at
+the individual mRNA level instead of genes (transcript).
+
+Once these were complete, one task that may be performed would be to
+apply suppa and/or rMats and look for splicing events of interest.
+
+
 
 # Bibliography

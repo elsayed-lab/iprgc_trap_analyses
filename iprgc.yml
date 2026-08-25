@@ -47,16 +47,20 @@ data/reference/README.md /data/reference/README.md
 data/sample_sheets/README.md /data/sample_sheets/README.md
 data/atb.bib /data/atb.bib
 data/iprgc_analyses_202408.Rmd /data/iprgc_analyses_202408.Rmd
+data/iprgc_transcript_analyses.Rmd /data/iprgc_transcript_analyses.Rmd
 data/preprocessing.Rmd /data/preprocessing.Rmd
 data/taa_analyses.Rmd /data/taa_analyses.Rmd
 data/taa_bulk_analyses.Rmd /data/taa_bulk_analyses.Rmd
 data/initial_analyses.Rmd /data/initial_analyses.Rmd
+data/iprgc_bulk_analyses_202603.Rmd /data/iprgc_bulk_analyses_202603.Rmd
+data/iprgc_bulk_transcript_analyses.Rmd /data/iprgc_bulk_transcript_analyses.Rmd
 data/mmusculus_biomart_annotations.rda /data/mmusculus_biomart_annotations.rda
 data/preprocessing/deduplicated_counts.tar /data/preprocessing/deduplicated_counts.tar
 data/preprocessing/non_deduplicated_counts.tar /data/preprocessing/non_deduplicated_counts.tar
+data/preprocessing/umi_dedup_mrna_count.tar /data/preprocessing/umi_dedup_mrna_count.tar
 data/preprocessing/symlink_counts.tar /data/preprocessing/symlink_counts.tar
 data/preprocessing/bulk_hisat_file.tar /data/preprocessing/bulk_hisat_file.tar
-data/preprocessing/bulk_salmon_file.tar.xz /data/preprocessing/bulk_salmon_file.tar.xz
+data/preprocessing/bulk_salmon_counts.tar.xz /data/preprocessing/bulk_salmon_counts.tar.xz
 data/sample_sheets/20240606_only_umd_sequenced_modified.xlsx /data/sample_sheets/20240606_only_umd_sequenced_modified.xlsx
 data/sample_sheets/20240606_only_umd_sequenced.xlsx /data/sample_sheets/20240606_only_umd_sequenced.xlsx
 

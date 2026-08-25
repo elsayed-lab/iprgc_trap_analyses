@@ -1,0 +1,955 @@
+---
+title: "ipRGC bulk RNAseq -- All Samples -- This time with feeling (transcript-level abundances)!"
+author: "Theresa Alexander, modified by atb"
+date: "4/15/2023, modified 202603"
+output:
+  html_document:
+    code_download: true
+    code_folding: hide
+    fig_caption: true
+    fig_height: 7
+    fig_width: 7
+    highlight: tango
+    keep_md: false
+    mode: selfcontained
+    number_sections: true
+    self_contained: true
+    theme: readable
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+      toc_depth: 5
+      rmdformats::readthedown:
+        code_download: true
+        code_folding: show
+        df_print: paged
+        fig_caption: true
+        fig_height: 7
+        fig_width: 7
+        highlight: tango
+        width: 300
+        keep_md: false
+        mode: selfcontained
+        toc_float: true
+        BiocStyle::html_document:
+          code_download: true
+          code_folding: show
+          fig_caption: true
+          fig_height: 7
+          fig_width: 7
+          highlight: tango
+          keep_md: false
+          mode: selfcontained
+          toc_float: true
+---
+<style type="text/css">
+body, td {
+  font-size: 16px;
+}
+code.r{
+  font-size: 16px;
+}
+pre {
+  font-size: 16px
+}
+</style>
+
+# Introduction
+
+This document is intended to repeat with minimal modification the work
+performed by Theresa when analyzing the RNASeq IPRGC data.  This is
+being performed in an apptainer (ugh I hate that name) container and
+so I will likely remove some of the libraries invoked in it.
+
+Not all of these are available in the container, and I do not think I have the version
+of Theresa's helper_functions.R which was used for this.  I did find a
+version of it that appears to work without any problems, though.
+
+At the end of this document, I am going to try to re-implement it
+with some minor changes to see if I can more easily reconcile the
+results to the tables provided by Colenso.
+
+```{r, message=FALSE, eval=FALSE}
+library("hpgltools")
+library("ggplot2")
+library("patchwork")
+library("plotly")
+library("RColorBrewer")
+library("DT")
+library("dplyr")
+library("openxlsx")
+library("ComplexHeatmap")
+library("circlize")
+library("gprofiler2")
+source("helper_functions.R")
+library("gplots")
+library("ggrepel")
+```
+
+
+```{r}
+#setwd("~/scratch_02/reesyxan/mmusculus_iprgc_2019")
+```
+
+# M. musculus
+
+## Annotations
+
+I am using mm38_100.
+
+```{r}
+mm_annot <- load_biomart_annotations(species = "mmusculus")
+mm_annot <- mm_annot[["annotation"]]
+mm_annot[["txid"]] <- paste0(mm_annot[["ensembl_transcript_id"]], ".", mm_annot[["version"]])
+rownames(mm_annot) <- make.names(mm_annot[["ensembl_gene_id"]], unique=TRUE)
+
+mm_tx_annot <- mm_annot[["annotation"]]
+## yeah, the ID tag in my gff file has transcript: as a prefix, so the featureCounts outputs
+## includes it...  I will fix that inpost.
+rownames(mm_tx_annot) <- paste0("transcript:", rownames(mm_tx_annot))
+
+tx_gene_map <- mm_annot[, c("txid", "ensembl_gene_id")]
+```
+
+
+So, I now have a table of mouse annotations.
+
+## Hisat2 expressionset
+
+```{r}
+mm38_hisat <- create_se("sample_sheets/samplesheet_bulkrnaseq_Opn4.xlsx",
+                        gene_info = mm_tx_annot, file_column = "salmon_count_table")
+```
+
+# Color Set Up
+
+```{r}
+color_condition <- mm38_hisat$initial_metadata$condition
+color_condition <- factor(color_condition, levels = c("Retina_het", "Retina_ko",
+                                                      "SCN_het", "SCN_ko", "dLGN_het", "dLGN_ko"))
+
+color_values <- c( "#00BFC4",  "#9AD2D3", "#F8766D", "#FBADA7", "#7CAE00", "#D3EE8F")
+col_fun = colorRamp2(c(0, 3, 6), c("blue", "pink", "red"))
+```
+
+# Mapped Counts Per Sample Plot
+
+```{r}
+library(forcats)
+mm38_hisat <- set_conditions(mm38_hisat, fact = "batch")
+libsize_df <- as.data.frame(plot_libsize(mm38_hisat)$table)
+rownames(libsize_df) <- mm38_hisat$design$sampleid
+libsize_df$samplenum <- paste0(mm38_hisat$design[rownames(libsize_df), "samplenumb"], "_",
+                               mm38_hisat$design[rownames(libsize_df), "batch"])
+libsize_df$sample_id <-  rownames(mm38_hisat$design)
+libsize_df <- libsize_df[order(libsize_df$sum),]
+
+ggplot(libsize_df, aes(x = fct_rev(fct_infreq(samplenum, sum)), y = sum, fill = condition)) +
+  geom_bar(stat = "identity", color = "black") +
+  theme_classic() +
+  #theme(axis.text.x= element_text(fct_rev(fct_infreq(libsize_df$samplenum, libsize_df$sum))), #remove x axis labels
+  #    axis.ticks.x=element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values = c("#60449b", "#009f6f", "orange")) +
+  xlab("Sample") +
+  ylab("Sum of Mapped Gene Counts") +
+  labs(fill = "")
+
+plot_libsize(mm38_hisat)
+```
+
+# Normalize Expression
+
+First we will filter out the genes which have low counts across all
+samples. Then I will normalize both without and with SVA correction.
+
+```{r}
+mm38_filt <- normalize(mm38_hisat, filter = TRUE)
+des <- colData(mm38_filt)
+new_factor <- paste0(des[["location"]], "_", des[["genotype"]])
+colData(mm38_hisat)[["location_genotype"]] <- new_factor
+
+mm38_norm <- normalize(mm38_hisat, filter = TRUE, convert = "cpm",
+                       norm = "quant", transform="log2")
+
+mm38_norm <- set_conditions(mm38_norm, fact = "location_genotype")
+```
+
+# Melanopsin Expression
+
+Here is a plot of the Opn4 expression across all retina samples split
+by batch. The 4 quadrants in the plot are <br>
+
+het:1 -- retina het samples in batch 1 <br>
+het:2 -- retina het samples in batch 2 <br>
+ko:1 -- retina ko samples in batch 1 <br>
+ko:2 -- retina ko samples in batch 2 <br>
+
+This is a Tx comparison; I need to either drop this or hunt down the set of
+transcript IDs (which I did)
+
+```{r, eval=FALSE}
+library(RColorBrewer)
+colors <- brewer.pal(name = "Spectral", n = 2)
+mm38_cpm <- normalize(mm38_filt, convert = "cpm")
+df <- data.frame(exprs = assay(mm38_cpm)["ENSMUSG00000021799",],
+                 genotype = as.factor(des[["genotype"]]),
+                 location = as.factor(des[["location"]]),
+                 sampleid = des[["sampleid"]],
+                 samplenum = des[["samplenumb"]],
+                 batch = des[["batch"]])
+
+## Set postscript arguments
+setEPS()
+postscript("bulkRNAseq_Opn4Expression_Retina.eps")
+cpm_df <- df |>
+  filter(location == "Retina" | location == "retina")
+
+## This is where I most miss ggstatsplot
+## I am going to sit and write my own version of it.
+ggplot(cpm_df, aes(x = samplenum, y = exprs, fill = genotype, group = genotype)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  xlab("Sample") +
+  ylab("Opn4 Counts Per Million (CPMs)") +
+  #scale_fill_manual(values = c("#FFC107", "#004D40", "orange"),
+  #                  aesthetics = "fill") +
+  ggtitle("Retina Melanopsin Expression") +
+  facet_wrap(~genotype:batch, scales = "free") +
+  ylim(c(0, 25)) +
+  theme_classic()
+dev.off()
+```
+
+The WT samples in batch 3 have about double the Opn4 expression as the
+het samples in batch 3 (and batch 2).
+
+# PCA
+
+```{r pca, message = FALSE}
+pca_norm <- plot_pca(mm38_norm, plot_labels = FALSE)
+pca_norm[["plot"]]
+## rownames(pca_norm$result$v)
+labels <- des[["sampleid"]]
+## labels <- paste0(mm38_norm$design$sampleid, "_", mm38_norm$design$samplenumb)
+all_df <-  cbind(as.data.frame(pca_norm$result$v), labels)
+
+shape_genotype <- mm38_norm$design$genotype
+color_condition <- mm38_norm$condition
+
+## filter(sample_id %in% c("S3_Het_Ret_S1", "S4_Het_Ret_S4", "S5_Het_Ret_S16", "S1_Het_Ret_S1", "S2_Het_Ret_S4", "S3_Het_Ret_S7", "S4_Het_Ret_S10", "S5_Het_Ret_S13")) |>
+
+pca_norm_plot <-  ggplot(all_df, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = color_condition, shape = shape_genotype),
+             size = 5) +
+  #scale_color_manual(values = color_values,
+  #                  aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with No Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_norm$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_norm$prop_var[2], "% variance"))
+
+#setEPS()                                             # Set postscript arguments
+#postscript("bulkRNAseq_PCA_allsamples_labeledS5.eps")                           # Start graphics device driver
+all_df[["labels"]] <- rownames(all_df)
+pca_norm_plot + ggtitle("PCA Normalized Counts") +
+geom_label_repel(data=filter(all_df,
+                             labels %in% labels), #c('s5_het_dlgn', 's5_het_ret', 's5_het_scn')),
+    nudge_x = 0.15,
+    nudge_y = 0.15)
+#dev.off()
+```
+
+## Look at the first batch of sequencing
+
+```{r}
+#batch 1 plot
+all_df[rownames(all_df) %in% tolower(rownames(des[des[["batch"]] == "1",])),] |>
+  ggplot(aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = color_condition[which(rownames(all_df) %in% tolower(rownames(des[des$batch == "1",])))],
+                 shape = shape_genotype[which(rownames(all_df) %in% tolower(rownames(des[des$batch == "1",])))]),
+             size = 5) +
+  scale_color_manual(values = color_values,
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype", shape = "Genotype")   +
+  ggtitle("PCA - Batch 1 RNAseq")  +
+  labs(x = paste0("PC1: ",  pca_norm$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_norm$prop_var[2], "% variance"))
+```
+
+I think there is an easier way to do the above
+
+```{r}
+b1 <- subset_se(mm38_norm, subset = "batch == '1'")
+plot_pca(b1)
+
+b1_b2 <- subset_se(mm38_norm, subset = "batch == '1'|batch == '2'")
+plot_pca(b1_b2)
+```
+
+```{r}
+#batch 1&2 plot
+pca_batch1and2 <- all_df |>
+  ggplot(aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = color_condition,
+                 shape = shape_genotype),
+             size = 5) +
+  scale_color_manual(values = color_values,
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype", shape = "Genotype")   +
+  ggtitle("PCA - Batch 1&2 RNAseq")  +
+  labs(x = paste0("PC1: ",  pca_norm$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_norm$prop_var[2], "% variance"))
+
+
+#setEPS()
+#postscript(file = "rnaseq_pca-batch1and2.eps")
+#pca_batch1and2
+#dev.off()
+```
+
+In this pca plot, we see the retina samples cluster on the right in
+the PC1 direction and the brain samples cluster on the left in the PC
+1 direction.
+
+As we saw before, there is disparity between some of the hets. As it
+turns out, all of the new Het samples cluster with the KO samples as
+our one weirdo did before. So now it seems that it is quite easy to
+get some genetic drift that leads to these mice's expression to behave
+in weird ways.
+
+As we did before, let's look at the Opn4 expression across all the
+retina samples to see if the Het samples that behave like KOs have
+lower Opn4 expression.
+
+# A closer look at the similar KOs and Hets
+
+Let's exclude the 2 Hets that are the most dissimilar from the bunch
+and look at a PCA plot of the rest of the samples.
+
+```{r}
+## The following subset is using an older sample ID which I am unable to find anywhere.
+## As a result, I rewrote that portion of Theresa's pca plot and labeled everything
+## according to the extant naming scheme, I will now try and figure out which
+## samples were removed.
+## mm38_subset <- subset_se(
+##   mm38_filt,
+## subset = "sampleid != 'S3_Het_dLGN'&sampleid != 'S3_Het_Ret'&sampleid != 'S3_Het_SCN'&sampleid != 'S4_Het_dLGN'&sampleid != 'S4_Het_Ret'&sampleid != 'S4_Het_SCN'")
+## S3_Het_dLGN_S2 is an outlier marked by Theresa
+## S3_Het_Ret_S1 is an outlier
+## S3_Het_SCN_S3 is an outlier
+## S4_Het_dLGN_S11 is somewhat an outlier, I might be inclined to leave it.
+## S4_Het_Ret_S4 is a huge outlier
+## S4_Het_SCN_S6 is an outlier
+
+## If I were choosing likely samples, I think I would go for:
+##S4_Het_Ret_S4, S3_Het_Ret_S1, S3_Het_SCN_s3, S3_Het_dLGN_S2, S4_Het_dLGN_S5, S4_Het_SCN_S6
+
+## Either way, I am adding a couple columns to the sample sheet with these calls for included samples.
+
+mm38_subset <- subset_se(mm38_filt, subset = "included=='yes'")
+
+mm38_subset <- normalize(mm38_subset, filter=TRUE, convert="cpm",
+                         norm = "quant", transform="log2")
+
+mm38_subset <- set_conditions(mm38_subset, fact = "location_time")
+
+pca_norm_subset <- plot_pca(mm38_subset, plot_labels = FALSE)
+pca_norm_subset
+
+labels <- rownames(pca_norm_subset$result$v)
+
+all_df <-  cbind(as.data.frame(pca_norm_subset$result$v), labels)
+shape_genotype <- mm38_subset$design$genotype
+color_condition <- pca_norm_subset$table$condition
+
+pca_norm_plot <-  ggplot(pca_norm_subset$table, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values,
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with No Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_norm_subset$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_norm_subset$prop_var[2], "% variance"))
+
+pca_norm_plot <-  ggplot(all_df, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = color_condition, shape = shape_genotype),
+             size = 5) +
+  #scale_color_manual(values = color_values,
+  #                  aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with No Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_norm_subset$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_norm_subset$prop_var[2], "% variance"))
+
+#setEPS()                                             # Set postscript arguments
+#postscript("bulkRNAseq_PCA_allsamples_labeledS5.eps")                           # Start graphics device driver
+pca_norm_plot + ggtitle("PCA Normalized Counts -- Subset") +
+  geom_label_repel(data=filter(all_df,
+                               labels %in% c('s4_het_scn_s12', 's4_het_ret', 's4_het_scn', 's5_het_dlgn')),
+                   nudge_x = 0.15,
+                   nudge_y = 0.1)
+
+pca_norm_plot + ggtitle("PCA Normalized Counts")# +
+
+pca_norm_plot
+# geom_label_repel(data=filter(all_df,
+#                               labels %in% labels), #c('s4_het_scn', 's5_het_ret', 's5_het_scn', 's5_het_dlgn')),
+#                   nudge_x = 0.15,
+#                   nudge_y = 0.15)
+#dev.off()
+```
+
+There really doesn't seem to be a discernible difference globally
+between the hets and kos within each location. We can do a DE with
+these samples between het/kos to quantify this.
+
+
+# DE of KOs versus Low expressor Hets
+
+```{r}
+mm38_filt_sub <- subset_se(mm38_filt, subset = "sampleid != 'S3_Het_dLGN'&sampleid != 'S3_Het_Ret'&sampleid != 'S3_Het_SCN'&sampleid != 'S4_Het_dLGN' & sampleid != 'S4_Het_Ret' & sampleid != 'S4_Het_SCN'")
+
+mm38_dlgn_subset <- subset_se(mm38_filt_sub, subset = "location_time == 'dLGN_het' | location_time == 'dLGN_ko'")
+mm38_ret_subset <- subset_se(mm38_filt_sub, subset = "location_time == 'Retina_het' | location_time == 'Retina_ko'")
+mm38_scn_subset <- subset_se(mm38_filt_sub, subset = "location_time == 'SCN_het' | location_time == 'SCN_ko'")
+
+mm38_dlgn_subset <- normalize(mm38_dlgn_subset, filter = TRUE)
+mm38_scn_subset <- normalize(mm38_scn_subset, filter = TRUE)
+mm38_ret_subset <- normalize(mm38_ret_subset, filter = TRUE)
+
+mm38_dlgn_subset <- set_batches(mm38_dlgn_subset, fact = "condition")
+mm38_scn_subset <- set_batches(mm38_scn_subset, fact = "condition")
+mm38_ret_subset <- set_batches(mm38_ret_subset, fact = "condition")
+
+mm38_dlgn_subset <- set_conditions(mm38_dlgn_subset, fact = "location_time")
+mm38_scn_subset <- set_conditions(mm38_scn_subset, fact = "location_time")
+mm38_ret_subset <- set_conditions(mm38_ret_subset, fact = "location_time")
+```
+
+```{r}
+test <- set_conditions(mm38_filt, fact = "location_time") |>
+normalize(transform = "log2", convert = "cpm", batch = "sva")
+plot_pca(test)
+```
+
+I do not think one should really do the DE with the data separate like
+this unless there is some compelling reason.  I am going to repeat
+without this constraint and see how similar/different the results are.
+In addition, the current revision of all_pairwise() is much more
+comfortable with more complex models, even with sva; so that might
+make this more fun.
+
+```{r}
+mm_de_dlgn <- all_pairwise(mm38_dlgn_subset, model_fstring = "~ 0 + condition",
+                           model_svs = "svaseq", filter = TRUE)
+mm_de_dlgn
+mm_table_dlgn <- combine_de_tables(mm_de_dlgn,
+                                   excel = "39bulk_tables_tx/mm_de_dlgn_table.xlsx")
+mm_sig_dlgn <- extract_significant_genes(mm_table_dlgn,
+                                         excel = "39bulk_tables_tx/mm_de_dlgn_sig.xlsx")
+
+mm_de_ret <- all_pairwise(mm38_ret_subset, model_fstring = "~ 0 + condition",
+                          model_svs = "svaseq", filter = TRUE)
+mm_de_ret
+mm_table_ret <- combine_de_tables(mm_de_ret,
+                                  excel = "39bulk_tables_tx/mm_de_ret_table.xlsx")
+mm_sig_ret <- extract_significant_genes(mm_table_ret,
+                                         excel = "39bulk_tables_tx/mm_de_ret_sig.xlsx")
+
+mm_de_scn <- all_pairwise(mm38_scn_subset, model_fstring = "~ 0 + condition",
+                          model_svs = "svaseq", filter = TRUE)
+mm_de_scn
+mm_table_scn <- combine_de_tables(mm_de_scn, excel = "39bulk_tables_tx/mm_de_scn_table.xlsx")
+mm_sig_scn <- extract_significant_genes(mm_table_scn, according_to = "deseq",
+                                        excel = "39bulk_tables_tx/mm_de_scn_sig.xlsx")
+```
+
+## SCN
+
+```{r}
+keepers <- names(mm_de_scn$deseq$all_tables)
+
+res_tbls_scn <- c()
+for (tbl in keepers) {
+  deseq_tbl <- get_de_table(mm_de_scn, table = tbl)
+  res_tbls_scn[[tbl]] <- merge(deseq_tbl, hisat_annot, by = "row.names")
+  fctr <- c(paste(gsub("\\_.*","",tbl), "\nEnriched"),
+            paste(sub('.*\\_', '', tbl), "\nEnriched"))
+  res_tbls_scn[[tbl]] <- set_sig_limma(res_tbls_scn[[tbl]], factors = fctr)
+  res_tbls_scn[[paste0(tbl, "volc_plotly")]] <- volc_plot(res_tbls_scn[[tbl]],
+                                                          title = paste("Volcano Plot:", tbl),
+                                                          type = "plotly",
+                                                          tbl = "limma",
+                                                          gene_name_col = "uniprot_gn_symbol")
+  res_tbls_scn[[paste0(tbl, "volc_ggplot")]] <- volc_plot(res_tbls_scn[[tbl]],
+                                                          title = paste("Volcano Plot:", tbl),
+                                                          tbl = "limma")
+}
+
+res_tbls_scn$SCNko_vs_SCNhetvolc_ggplot
+res_tbls_scn$SCNko_vs_SCNhetvolc_plotly
+res_tbls_scn$SCNko_vs_SCNhet |>
+  filter(adj.P.Val <= 0.05) |>
+  filter(abs(logFC) >= 1) |>
+  select("ensembl_gene_id", "uniprot_gn_symbol", "Significance", "description", "baseMean", "logFC", "adj.P.Val") |>
+  arrange(logFC) |>
+  DT::datatable(rownames = FALSE)
+```
+
+## dLGN
+
+```{r}
+keepers <- names(mm_de_dlgn$deseq$all_tables)
+
+res_tbls_dlgn <- c()
+for (tbl in keepers) {
+  deseq_tbl <- get_de_table(mm_de_dlgn, table = tbl)
+  res_tbls_dlgn[[tbl]] <- merge(deseq_tbl, hisat_annot, by = "row.names")
+  res_tbls_dlgn[[tbl]] <- set_sig_limma(res_tbls_dlgn[[tbl]], factors = c(paste(gsub("\\_.*","",tbl), "\nEnriched"),
+                                                                          paste(sub('.*\\_', '', tbl), "\nEnriched")))
+  res_tbls_dlgn[[paste0(tbl, "volc_plotly")]] <- volc_plot(res_tbls_dlgn[[tbl]],
+                                                           title = paste("Volcano Plot:", tbl),
+                                                           type = "plotly",
+                                                           tbl = "limma",
+                                                           gene_name_col = "uniprot_gn_symbol")
+  res_tbls_dlgn[[paste0(tbl, "volc_ggplot")]] <- volc_plot(res_tbls_dlgn[[tbl]],
+                                                           title = paste("Volcano Plot:", tbl),
+                                                           tbl = "limma")
+}
+
+res_tbls_dlgn$dLGNko_vs_dLGNhetvolc_ggplot
+res_tbls_dlgn$dLGNko_vs_dLGNhetvolc_plotly
+res_tbls_dlgn$dLGNko_vs_dLGNhet |>
+  filter(adj.P.Val <= 0.05) |>
+  filter(abs(logFC) >= 1) |>
+  select("ensembl_gene_id", "uniprot_gn_symbol", "Significance", "description", "baseMean", "logFC", "adj.P.Val") |>
+  arrange(logFC) |>
+  DT::datatable(rownames = FALSE)
+```
+
+
+## Retina
+
+```{r}
+keepers <- names(mm_de_ret$deseq$all_tables)
+
+res_tbls_ret <- c()
+for (tbl in keepers) {
+  deseq_tbl <- get_de_table(mm_de_ret, table = tbl)
+  res_tbls_ret[[tbl]] <- merge(deseq_tbl, hisat_annot, by = "row.names")
+  res_tbls_ret[[tbl]] <- set_sig_limma(res_tbls_ret[[tbl]], factors = c(paste(gsub("\\_.*","",tbl), "\nEnriched"),
+                                                                        paste(sub('.*\\_', '', tbl), "\nEnriched")))
+  res_tbls_ret[[paste0(tbl, "volc_plotly")]] <- volc_plot(res_tbls_ret[[tbl]],
+                                                          title = paste("Volcano Plot:", tbl),
+                                                          type = "plotly",
+                                                          tbl = "limma",
+                                                          gene_name_col = "uniprot_gn_symbol")
+  res_tbls_ret[[paste0(tbl, "volc_ggplot")]] <- volc_plot(res_tbls_ret[[tbl]],
+                                                          title = paste("Volcano Plot:", tbl),
+                                                          tbl = "limma")
+}
+
+res_tbls_ret$Retinako_vs_Retinahetvolc_ggplot
+res_tbls_ret$Retinako_vs_Retinahetvolc_plotly
+res_tbls_ret$Retinako_vs_Retinahet |>
+  filter(adj.P.Val <= 0.05) |>
+  filter(abs(logFC) >= 1) |>
+  select("ensembl_gene_id", "uniprot_gn_symbol", "Significance", "description", "baseMean", "logFC", "adj.P.Val") |>
+  arrange(logFC) |>
+  DT::datatable(rownames = FALSE)
+```
+
+# DE of all samples with SVA batch correction for high v low expressors
+
+```{r}
+mm38_dlgn_subset <- subset_se(
+  mm38_filt, subset = "location_time == 'dLGN_het'| location_time == 'dLGN_ko'")
+mm38_ret_subset <- subset_se(
+  mm38_filt, subset = "location_time == 'Retina_het'| location_time == 'Retina_ko'")
+mm38_scn_subset <- subset_se(
+  mm38_filt, subset = "location_time == 'SCN_het'| location_time == 'SCN_ko'")
+
+mm38_dlgn_subset <- normalize(mm38_dlgn_subset, filter = TRUE)
+mm38_scn_subset <- normalize(mm38_scn_subset, filter = TRUE)
+mm38_ret_subset <- normalize(mm38_ret_subset, filter = TRUE)
+
+mm38_dlgn_subset <- set_batches(mm38_dlgn_subset, fact = "condition")
+mm38_scn_subset <- set_batches(mm38_scn_subset, fact = "condition")
+mm38_ret_subset <- set_batches(mm38_ret_subset, fact = "condition")
+
+mm38_dlgn_subset <- set_conditions(mm38_dlgn_subset, fact = "location_time")
+mm38_scn_subset <- set_conditions(mm38_scn_subset, fact = "location_time")
+mm38_ret_subset <- set_conditions(mm38_ret_subset, fact = "location_time")
+```
+
+```{r}
+mm_de_dlgn_sva <- all_pairwise(mm38_dlgn_subset, model_fstring = "~ 0 + condition",
+                               model_svs = "svaseq", filter = TRUE)
+mm_de_ret_sva <- all_pairwise(mm38_ret_subset, model_fstring = "~ 0 + condition",
+                               model_svs = "svaseq", filter = TRUE)
+mm_de_scn_sva <- all_pairwise(mm38_scn_subset, model_fstring = "~ 0 + condition",
+                               model_svs = "svaseq", filter = TRUE)
+mm_de_scn_sva
+
+mm_scn_sva_table <- combine_de_tables(
+  mm_de_scn_sva, excel = "excel/mm_subset_scn_sva_table.xlsx")
+mm_scn_sva_table
+mm_scn_sva_sig <- extract_significant_genes(
+  mm_scn_sva_table, excel = "excel/mm_subset_scn_sva_sig.xlsx")
+mm_scn_sva_sig
+```
+
+## dLGN
+
+### PCA pre and post SVAseq
+
+```{r}
+mm38_dlgn_subset_norm_batch <- normalize(mm38_dlgn_subset, convert = "cpm",
+                                         transform = "log2", batch = "svaseq")
+mm38_dlgn_subset_norm_nobatch <- normalize(mm38_dlgn_subset, convert = "cpm", norm = "quant",
+                                           transform = "log2")
+
+pca_mm38_dlgn_subset_norm_nobatch <- plot_pca(mm38_dlgn_subset_norm_nobatch)
+pca_norm_plot_nobatch <-  ggplot(pca_mm38_dlgn_subset_norm_nobatch$table, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values,
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with No Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_mm38_dlgn_subset_norm_nobatch$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_mm38_dlgn_subset_norm_nobatch$prop_var[2], "% variance"))  +
+  geom_label_repel(data=filter(pca_mm38_dlgn_subset_norm_nobatch$table,
+                               labels %in% c('S3_Ht_dLGN', 'S4_Ht_dLGN')),
+                   nudge_x = 0.1,
+                   nudge_y = 0.1)
+
+
+pca_mm38_dlgn_subset_norm_batch <- plot_pca(mm38_dlgn_subset_norm_batch)
+pca_norm_plot_batch <-  ggplot(pca_mm38_dlgn_subset_norm_batch$table, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values,
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with SVA Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_mm38_dlgn_subset_norm_batch$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_mm38_dlgn_subset_norm_batch$prop_var[2], "% variance"))  +
+  geom_label_repel(data=filter(pca_mm38_dlgn_subset_norm_batch$table,
+                               labels %in% c('S3_Ht_dLGN', 'S4_Ht_dLGN')),
+                   nudge_x = 0.1,
+                   nudge_y = 0.1)
+
+
+pca_norm_plot_nobatch
+pca_norm_plot_batch
+```
+
+
+### Volcano Plots ad DE table results
+
+```{r}
+keepers <- names(mm_de_dlgn_sva$deseq$all_tables)
+
+res_tbls_dlgn_sva <- c()
+for (tbl in keepers) {
+  deseq_tbl <- get_de_table(mm_de_dlgn_sva, table = tbl)
+  res_tbls_dlgn_sva[[tbl]] <- merge(deseq_tbl, hisat_annot, by = "row.names")
+  res_tbls_dlgn_sva[[tbl]] <- set_sig_limma(res_tbls_dlgn_sva[[tbl]], factors = c(paste(gsub("\\_.*","",tbl), "\nEnriched"),
+                                                                                  paste(sub('.*\\_', '', tbl), "\nEnriched")))
+  res_tbls_dlgn_sva[[paste0(tbl, "volc_plotly")]] <- volc_plot(res_tbls_dlgn_sva[[tbl]],
+                                                               title = paste("Volcano Plot:", tbl),
+                                                               type = "plotly",
+                                                               tbl = "limma",
+                                                               gene_name_col = "uniprot_gn_symbol")
+  res_tbls_dlgn_sva[[paste0(tbl, "volc_ggplot")]] <- volc_plot(res_tbls_dlgn_sva[[tbl]],
+                                                               title = paste("Volcano Plot:", tbl),
+                                                               tbl = "limma")
+}
+
+res_tbls_dlgn_sva$dLGNko_vs_dLGNhetvolc_ggplot
+res_tbls_dlgn_sva$dLGNko_vs_dLGNhetvolc_plotly
+
+res_tbls_dlgn_sva$dLGNko_vs_dLGNhet |>
+  filter(adj.P.Val <= 0.05) |>
+  filter(abs(logFC) >= 1) |>
+  select("ensembl_gene_id", "uniprot_gn_symbol", "Significance", "description", "baseMean", "logFC", "adj.P.Val") |>
+  arrange(logFC) |>
+  DT::datatable(rownames = FALSE)
+```
+
+Samd11 and Dmrt3 are still both upregulated in dLGN KOs (as they were
+without including the high-expressors).
+
+Pttg1, Sema3g, Ifih1, Dppa5a, and Prg4 are all upregulated in dLGN
+Hets including and excluding the high expressors. We do lose a few
+genes when including high expressors that were enriched in dLGN hets
+before.
+
+## SCN
+
+### PCA pre and post SVAseq
+
+```{r}
+mm38_scn_subset_norm_batch <- normalize(mm38_scn_subset, convert = "cpm",
+                                        transform = "log2", batch = "svaseq")
+mm38_scn_subset_norm_nobatch <- normalize(mm38_scn_subset, convert = "cpm", norm = "quant",
+                                          transform = "log2")
+
+pca_mm38_scn_subset_norm_nobatch <- plot_pca(mm38_scn_subset_norm_nobatch)
+pca_norm_plot_nobatch_scn <-  ggplot(pca_mm38_scn_subset_norm_nobatch$table,
+                                     aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values[5:6],
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with No Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_mm38_scn_subset_norm_nobatch$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_mm38_scn_subset_norm_nobatch$prop_var[2], "% variance"))  +
+  geom_label_repel(data=filter(pca_mm38_scn_subset_norm_nobatch$table,
+                               labels %in% c('S3_Het_SCN', 'S4_Het_SCN')),
+                   nudge_x = 0.2,
+                   nudge_y = 0.2)
+
+
+pca_mm38_scn_subset_norm_batch <- plot_pca(mm38_scn_subset_norm_batch)
+pca_norm_plot_batch_scn <-  ggplot(pca_mm38_scn_subset_norm_batch$table, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values[5:6],
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with SVA Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_mm38_scn_subset_norm_batch$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_mm38_scn_subset_norm_batch$prop_var[2], "% variance"))  +
+  geom_label_repel(data=filter(pca_mm38_scn_subset_norm_batch$table,
+                               labels %in% c('S3_Het_SCN', 'S4_Het_SCN')),
+                   nudge_x = 0.2,
+                   nudge_y = 0.2)
+
+
+pca_norm_plot_nobatch_scn
+pca_norm_plot_batch_scn
+```
+
+### Volcano Plots ad DE table results
+
+```{r}
+keepers <- names(mm_de_scn_sva$deseq$all_tables)
+
+res_tbls_scn_sva <- c()
+for (tbl in keepers) {
+  deseq_tbl <- get_de_table(mm_de_scn_sva, table = tbl)
+  res_tbls_scn_sva[[tbl]] <- merge(deseq_tbl, hisat_annot, by = "row.names")
+  res_tbls_scn_sva[[tbl]] <- set_sig_limma(res_tbls_scn_sva[[tbl]], factors = c(paste(gsub("\\_.*","",tbl), "\nEnriched"),
+                                                                                paste(sub('.*\\_', '', tbl), "\nEnriched")))
+  res_tbls_scn_sva[[paste0(tbl, "volc_plotly")]] <- volc_plot(res_tbls_scn_sva[[tbl]],
+                                                              title = paste("Volcano Plot:", tbl),
+                                                              type = "plotly",
+                                                              tbl = "limma",
+                                                              gene_name_col = "uniprot_gn_symbol")
+  res_tbls_scn_sva[[paste0(tbl, "volc_ggplot")]] <- volc_plot(res_tbls_scn_sva[[tbl]],
+                                                              title = paste("Volcano Plot:", tbl),
+                                                              tbl = "limma")
+}
+
+res_tbls_scn_sva$SCNko_vs_SCNhetvolc_ggplot
+res_tbls_scn_sva$SCNko_vs_SCNhetvolc_plotly
+
+res_tbls_scn_sva$SCNko_vs_SCNhet |>
+  filter(adj.P.Val <= 0.05) |>
+  filter(abs(logFC) >= 1) |>
+  select("ensembl_gene_id", "uniprot_gn_symbol", "Significance", "description", "baseMean", "logFC", "adj.P.Val") |>
+  arrange(logFC) |>
+  DT::datatable(rownames = FALSE)
+```
+
+## Retina
+
+### PCA pre and post SVAseq
+
+```{r}
+mm38_ret_subset_norm_batch <- normalize(mm38_ret_subset, convert = "cpm",
+                                        transform = "log2", batch = "svaseq")
+mm38_ret_subset_norm_nobatch <- normalize(mm38_ret_subset, convert = "cpm", norm = "quant",
+                                          transform = "log2")
+
+pca_mm38_ret_subset_norm_nobatch <- plot_pca(mm38_ret_subset_norm_nobatch)
+pca_norm_plot_nobatch_ret <-  ggplot(pca_mm38_ret_subset_norm_nobatch$table, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values[3:4],
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with No Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_mm38_ret_subset_norm_nobatch$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_mm38_ret_subset_norm_nobatch$prop_var[2], "% variance"))  +
+  geom_label_repel(data=filter(pca_mm38_ret_subset_norm_nobatch$table,
+                               labels %in% c('S3_Het_Ret', 'S4_Het_Ret')),
+                   nudge_x = 0.2,
+                   nudge_y = 0.2)
+
+
+pca_mm38_ret_subset_norm_batch <- plot_pca(mm38_ret_subset_norm_batch)
+pca_norm_plot_batch_ret <-  ggplot(pca_mm38_ret_subset_norm_batch$table, aes(x = PC1, y = PC2, label = labels)) +
+  geom_point(aes(color = condition),
+             size = 5) +
+  scale_color_manual(values = color_values[3:4],
+                     aesthetics = "color") +
+  theme_classic() +
+  labs(color="Cell Compartment/Genotype")   +
+  ggtitle("PCA with SVA Batch Correction")  +
+  labs(x = paste0("PC1: ",  pca_mm38_ret_subset_norm_batch$prop_var[1], "% variance"),
+       y =  paste0("PC2: ",  pca_mm38_ret_subset_norm_batch$prop_var[2], "% variance"))  +
+  geom_label_repel(data=filter(pca_mm38_ret_subset_norm_batch$table,
+                               labels %in% c('S3_Het_Ret', 'S4_Het_Ret')),
+                   nudge_x = 0.2,
+                   nudge_y = 0.2)
+
+
+pca_norm_plot_nobatch_ret
+pca_norm_plot_batch_ret
+```
+
+### Volcano Plots ad DE table results
+
+```{r}
+keepers <- names(mm_de_ret_sva$deseq$all_tables)
+
+res_tbls_ret_sva <- c()
+for (tbl in keepers) {
+  deseq_tbl <- get_de_table(mm_de_ret_sva, table = tbl)
+  res_tbls_ret_sva[[tbl]] <- merge(deseq_tbl, hisat_annot, by = "row.names")
+  res_tbls_ret_sva[[tbl]] <- set_sig_limma(res_tbls_ret_sva[[tbl]], factors = c(paste(gsub("\\_.*","",tbl), "\nEnriched"),
+                                                                                paste(sub('.*\\_', '', tbl), "\nEnriched")))
+  res_tbls_ret_sva[[paste0(tbl, "volc_plotly")]] <- volc_plot(res_tbls_ret_sva[[tbl]],
+                                                              title = paste("Volcano Plot:", tbl),
+                                                              type = "plotly",
+                                                              tbl = "limma",
+                                                              gene_name_col = "uniprot_gn_symbol")
+  res_tbls_ret_sva[[paste0(tbl, "volc_ggplot")]] <- volc_plot(res_tbls_ret_sva[[tbl]],
+                                                              title = paste("Volcano Plot:", tbl),
+                                                              tbl = "limma")
+}
+
+res_tbls_ret_sva$Retinako_vs_Retinahetvolc_ggplot
+res_tbls_ret_sva$Retinako_vs_Retinahetvolc_plotly
+
+res_tbls_ret_sva$Retinako_vs_Retinahet |>
+  filter(adj.P.Val <= 0.05) |>
+  filter(abs(logFC) >= 1) |>
+  select("ensembl_gene_id", "uniprot_gn_symbol", "Significance", "description", "baseMean", "logFC", "adj.P.Val") |>
+  arrange(logFC) |>
+  DT::datatable(rownames = FALSE)
+```
+
+# Re-Implementation
+
+Let us start with the full set of desired tables.  In the above, the
+data was separated into ~ 9 separate chunks and I think it will
+benefit from being kept together -- also I seem to recall expressing
+this to Theresa and that she changed the notebook to this kind of
+analysis.  If I am correct, then it is possible she did so in a
+separate notebook which I have not found and that this will provide
+the fully reconciled set of results.
+
+I have reasonable hope for this because the various plots etc early on
+look identical between this containerized notebook, and those
+notebooks I found in her working tree.
+
+While I wait for these tables to come back, let us count the number of
+samples in the plot provided by Colenso so that I may doublecheck that
+nothing got filtered out or anything important like that.
+
+8 pink samples, 17 green samples, 17 blue samples.
+
+4 light pink, 4 dark pink
+9 medium green, 4 light green, 4 dark green.
+9 medium blue, 4 light blue, 4 dark blue.
+
+With the above in mind, let us make a small change in how the data is
+handled and see if I cannot get numbers more closely aligned to the
+tables from Colenso.
+
+```{r}
+## Here is a reminder of Theresa's filter:
+## filter(sample_id %in% c("S3_Het_Ret_S1", "S4_Het_Ret_S4", "S5_Het_Ret_S16", "S1_Het_Ret_S1", "S2_Het_Ret_S4", "S3_Het_Ret_S7", "S4_Het_Ret_S10", "S5_Het_Ret_S13")) |>
+
+mm_final <- subset_se(mm38_hisat, subset = "included=='yes'") |>
+  set_conditions(fact = "location_genotype")
+
+mm_norm <- normalize(mm_final, transform = "log2", convert = "cpm", filter = TRUE, norm = "quant")
+plot_pca(mm_norm)
+
+mm_nb <- normalize(mm_final, transform = "log2", convert = "cpm", filter = TRUE, batch = "svaseq")
+plot_pca(mm_nb)
+```
+
+There remain a couple of weirdo samples, but things look quite a bit
+easier to interpret to my eyes.
+
+```{r}
+final_keepers <- list(
+  ## Three comparisons among the dLGN samples.
+  "dlgn_kw" = c("dLGN_ko", "dLGN_wt"),
+  "dlgn_kh" = c("dLGN_ko", "dLGN_het"),
+  "dlgn_hw" = c("dLGN_het", "dLGN_wt"),
+  ## Three comparisons among the SCN samples.
+  "scn_kw" = c("SCN_ko", "SCN_wt"),
+  "scn_kh" = c("SCN_ko", "SCN_het"),
+  "scn_hw" = c("SCN_het", "SCN_wt"),
+  ## and the retina samples
+  "retina_kw" = c("Retina_ko", "Retina_wt"),
+  "retina_kh" = c("Retina_ko", "Retina_het"),
+  "retina_hw" = c("Retina_het", "Retina_wt")
+)
+
+genoloc_de_sva <- all_pairwise(mm_final, model_fstring = "~ 0 + condition", filter = TRUE,
+                               model_svs = "svaseq", keepers = final_keepers)
+genoloc_table_sva <- combine_de_tables(genoloc_de_sva, excel = "excel/genotype_location_tables.xlsx")
+genoloc_sig_sva <- extract_significant_genes(genoloc_table_sva, according_to = "deseq",
+                                             excel = "excel/genotype_location_sig.xlsx")
+
+
+location_keepers <- list(
+  ## ko across locations
+  "ko_dlgn_scn" = c("dLGN_ko", "SCN_ko"),
+  "ko_dlgn_ret" = c("dLGN_ko", "Retina_ko"),
+  "ko_scn_ret" = c("SCN_ko", "Retina_ko"),
+  ## het across locations
+  "het_dlgn_scn" = c("dLGN_het", "SCN_het"),
+  "het_dlgn_ret" = c("dLGN_het", "Retina_het"),
+  "het_scn_ret" = c("SCN_het", "Retina_het"),
+  ## wt across locations
+  "wt_dlgn_scn" = c("dLGN_wt", "SCN_wt"),
+  "wt_dlgn_ret" = c("dLGN_wt", "Retina_wt"),
+  "wt_scn_ret" = c("SCN_wt", "Retina_wt"))
+location_comparisons <- all_pairwise(mm_final, model_fstring = "~ 0 + condition", filter = TRUE,
+                               model_svs = "svaseq", keepers = location_keepers)
+location_table <- combine_de_tables(location_comparisons, excel = "excel/locations.xlsx")
+location_sig <- extract_significant_genes(location_table, according_to = "deseq",
+                                             excel = "excel/location_sig.xlsx")
+```
+
+Save some of the DE results for comparison agains the TRAP data
+
+```{r, eval=FALSE}
+de_list <- c("mm_de_dlgn_sva", "mm_de_ret_sva", "mm_de_scn_sva",
+             "mm_de_dlgn", "mm_de_ret", "mm_de_scn",
+             "genoloc_de_sva", "genoloc_table_sva")
+saved <- save(list = de_list, file = "bulk_results.rda")
+```
+

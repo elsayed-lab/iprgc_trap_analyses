@@ -10,6 +10,11 @@ prereq_pkgs <- c(
 for (i in prereq_pkgs) {
     install.packages(i)
 }
+bioc_version <- Sys.getenv("BIOC_VERSION")
+message("Setting the bioconductor release to ", bioc_version, ".")
+## This should be redundant with the use of renv, but it seems like there is some weird
+## interaction going on resulting in an inconsistent state.
+updated <- BiocManager::install(version = bioc_version)
 github_pkgs <- c(
   "Bioconductor/AnnotationHubData", "js229/Vennerable", "YuLab-SMU/ggtree", "davidsjoberg/ggsankey",
   "reesyxan/iDA", "dviraran/xCell")
@@ -104,5 +109,5 @@ installedp <- try(renv::install("preprocessCore", rebuild = TRUE, prompt = FALSE
 hdf5_stupid <- try(renv::install("Rhdf5lib", rebuild = TRUE, prompt = FALSE))
 hdf5_stupid <- try(renv::install("rhdf5", rebuild = TRUE, prompt = FALSE))
 renv_options <- options(start_options)
-renv::snapshot()
+renv::snapshot(force = TRUE)
 renv::deactivate()

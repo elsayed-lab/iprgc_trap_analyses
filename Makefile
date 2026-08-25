@@ -13,7 +13,7 @@ SETUP_SCRIPTS = local/bin/*.sh
 CONFIG_FILES = local/etc/*
 
 ## If your machine has less than ~ 180G ram, you may need to set this to FALSE
-DEFAULT_INPUT="preprocessing.Rmd:iprgc_analyses_202408.Rmd:README.Rmd"
+DEFAULT_INPUT="preprocessing.Rmd:iprgc_analyses_202408.Rmd:iprgc_transcript_analyses.Rmd:iprgc_bulk_analyses_202603.Rmd:iprgc_bulk_transcript_analyses.Rmd:README.Rmd"
 
 ## Note x,y is multiple binds, a:b binds host:a to container:b
 SINGULARITY_BIND="/sw/local/R/renv_cache,/sw/local/spack/cache,/sw/local/apt/cache"

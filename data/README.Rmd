@@ -1,7 +1,6 @@
 ---
 title: "IPRGC translatome analyses: `r Sys.getenv('VERSION')`: README."
 author: "atb abelew@gmail.com"
-bibliography: /home/trey/scratch/zotero_library/atb.bib
 date: "`r Sys.Date()`"
 output:
   html_document:

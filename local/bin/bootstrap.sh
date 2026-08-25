@@ -36,8 +36,10 @@ echo "Setting up a Debian stable instance."
 echo "Dir::Cache /sw/local/apt/cache;" > /etc/apt/apt.conf.d/99-cache_dir
 apt-get update
 apt-get -y upgrade
+deb_pkgs=''
 for i in $(/bin/cat /usr/local/etc/deb_packages.txt); do
-    { apt-get -y install $i || echo "Could not install $i."; }
+    deb_pkgs="${deb_pkgs} ${i}"
+    { apt-get -y install $deb_pkgs || echo "Could not install ${deb_pkgs}."; }
 done
 ln -s /usr/lib/R/site-library /data/R
 mkdir -p /data/renv/library/linux-debian-trixie/R-4.5
@@ -74,6 +76,7 @@ fi
 ## to use this renv in other environments (but not this singularity instance,
 ## or it will die horribly).
 echo "Running the bootstrap R installation script."
+echo "This should install bioconductor revision ${BIOC_VERSION} for R ${R_VERSION}."
 { /usr/local/bin/bootstrap.R || echo "Failed to finish bootstrap.R"; }
 echo "Using commit ID ${HPGLTOOLS_COMMIT}."
 echo "The last commit included:" | tee -a ${log}

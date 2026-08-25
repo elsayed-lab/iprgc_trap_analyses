@@ -2,7 +2,6 @@
 title: "Analyses of the IPRGC re-processed samples."
 author: "atb abelew@gmail.com"
 date: "`r Sys.Date()`"
-bibliography: atb.bib
 output:
   html_document:
     code_download: true

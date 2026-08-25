@@ -1,5 +1,5 @@
 ---
-title: "Analyses of the IPRGC re-processed samples."
+title: "Analyses of the IPRGC transcript abundances."
 author: "atb abelew@gmail.com"
 date: "`r Sys.Date()`"
 output:
@@ -45,16 +45,16 @@ output:
 
 <style type="text/css">
 body, td {
-font-size: 16px;
+  font-size: 16px;
 }
 code.r{
-font-size: 16px;
+  font-size: 16px;
 }
 pre {
-font-size: 16px
+  font-size: 16px
 }
 body .main-container {
-max-width: 1600px;
+  max-width: 1600px;
 }
 </style>
 
@@ -81,102 +81,76 @@ ver <- format(Sys.Date(), "%Y%m%d")
 ##tmp <- sm(loadme(filename=paste0(gsub(pattern="\\.Rmd", replace="", x=previous_file), "-v", ver, ".rda.xz")))
 rmd_file <- "iprgc_analyses_202408.Rmd"
 savefile <- gsub(pattern = "\\.Rmd", replace = "\\.rda\\.xz", x = rmd_file)
-## No one will ever read this I suspect, but there will _never_ be a word produced
-## by an LLM in a document written by me.
+## No one will ever read this I suspect, but this has _no_ LLM-produced text.
 ```
 
-Note to self: I changed the clusterProfiler output list to store the
-enrichResults in [[xx_data]][[enrich]], or in the case of go:
-[[go_data]][[BP_enrich]] instead of enrich_results.
+# Primary transcript question of interest
+
+When comparing the het/ko data, a specific set of genes was observed;
+what are the set of transcripts icluded among them of interest? This
+is in contrast to Najib's question: are there transcripts not included
+among the genes observed.
+
+Likely annotation columns: ensembl_gene_id, ensembl_transcript_id,
+ensembl_peptide_id, ensembl_exon_id, description, chromosome,
+transcript_start, transcript_end, transcript_length, strand,
+external_gene_name, external_transcript_name, external_synonym,
+phenotype_description, refseq_mrna.
 
 # Set some parameters which will be used later
 
 ```{r}
-## LogFC cutoff when working on 'normal' comparisons
-lfc_cutoff <- 1.0
-## LogFC cutoff when working on the inclusion sets.
-filter_lfc_cutoff <- 0.1
-## Adjusted p-value cutoff when working with 'normal' contrasts
+## Adjusted p-value cutoff when working on 'normal' contrasts.
 adjp_cutoff <- 0.05
 ## Adjusted p-value cutoff when working on the inclusion sets.
 filter_adjp_cutoff <- 0.1
+default_fstring <- "~ 0 + condition"
+## Allow 10 GO categories to be displayed when plotting.
+go_categories <- 14
+## Allow groups higher up in the tree for clusterProfiler results.
+go_level <- 2
+tx_label_column <- "external_transcript_name" ## Set the column used to extract gene symbols rather than ENSG.....
+gene_label_column <- "external_synonym"
+## LogFC cutoff when working on the inclusion sets.
+filter_lfc_cutoff <- 0.1
+## LFC cutoff for 'normal' contrasts.
+lfc_cutoff <- 1.0
 ## Increase the maximum allowed group size when working with clusterProfiler
 ## This should bring out some of the more general groups like 'cellbody'
 max_groupsize <- 2000
-## Allow groups higher up in the tree for clusterProfiler results.
-go_level <- 2
-## Allow 10 GO categories to be displayed when plotting.
-go_categories <- 14
+## Speed up clusterProfiler by choosing the correct keytypes
+orgdb_from <- "ENSEMBLTRANS"
 ## MA plot point outlines
 outline <- FALSE
-## Speed up clusterProfiler by choosing the correct keytypes
-orgdb_from <- "ENSEMBL"
-default_fstring <- "~ 0 + condition"
+sample_sheet <- "sample_sheets/20240606_only_umd_sequenced_modified.xlsx"
+#annotation_columns <- c(
+#  "ensembl_gene_id", "ensembl_transcript_id","ensembl_peptide_id", "ensembl_exon_id",
+#  "description", "chromosome_name", "transcript_start", "transcript_end", "transcript_length",
+#  "strand", "external_gene_name", "external_transcript_name", "external_synonym",
+#  "phenotype_description", "refseq_mrna")
+annotation_columns <- c("ensembl_gene_id", "ensembl_transcript_id", "description", "external_synonym", "external_transcript_name")
 ```
-
-# TODOs
-
-* Check this for correctness.
-* Reorganize it
-* GSVA (@hanzelmannGSVAGeneSet2013a)
-* Consider embedding some/many/all of the Excel outputs into the html
-  output via xfun::embed_dir('excel/')
-
-# Meeting with Theresa
-
-Previous papers did not do an explicit subtraction, instead just
-compared to WT and kept the genes which are > in delta/het vs. wt.
-There are multiple ways to deal with this and that query has not yet
-been defined.  Later, Theresa came to the conclusion that the
-subtraction method is not appropriate.
-
-# A note on transcript-level changes
-
-An interesting question was posed regarding transcript-level changes
-in the TRAP and bulk data.  As a result, I made copies of the
-notebooks and repeated all analyses at the transcript level; the
-various images, excel files, etc are all in the same directories with
-a suffix '_tx'.  A few minor changes were introduced for the labelling
-of genes.
-
-I made no effort to compare the similarities between the
-transcript-level changes for the TRAP and bulk data; but did that only
-at the level of genes.
 
 # Introduction
 
-In this document I hope to explore the freshly processed samples and
-perform some comparisons to see that we have the expected similarities
-and differences from the prior analysis performed by Theresa.
+This document is a copy of the iprgc_analyses_202408.Rmd document,
+with a few important differences:
 
-There is one way in which I expect any/all of these analyses to be
-explicitly different: this should include the changes produced by
-April's renaming of some samples.
+1.  I will not be spending time to compare the various (de)duplication
+    methods/results.
+2.  This will create, visualize, and analyze transcript-level
+    abundances rather than genes.
+3.  I have not yet decided, but I might play with the wt filtering to
+    try to make it clearer.
+4.  I will likely remove some comments and text describing what
+    is going on.
+5.  All output directories get a suffix '_tx'
 
-My intention is to produce a sample sheet which includes one column
-with non-umi-deduplicated results and one with deduplicated results.
-With the exception of the previous point, I hope that the first will
-be identical (or at least very close to identical) to Theresa's result
-while the second I expect will be subtly different -- but I am hoping
-subtly enough that it will not significantly change the interpretation
-but be a little more precise.
-
-Lets see!  I need therefore to make a change to my metadata gathering
-function to include the umi deduplicated result.  I am thinking
-therefore to create a separate specification for umi-barcoded samples
-because looking through the logs for umi stuff when they are not used
-will be too much of a pain...
-
-## Small random reminder
-
-I have a couple pictures of RPL22 to help me remember the experimental
-design:
-
-* The human ribosome with RPL22 in red: ![human_rpl22_red](human_ribosome_L22_red.png)
-* The mouse ribosome with RPL22 in green at the center:
-![mouse_rpl22](mmusculus_RPL22_green_center.png)
-
-That second picture came from: (@liMaleGermcellspecificRibosome2022)
+With that in mind, the goal is to repeat our gene-level analyses, but
+using the transcript quantifications derived from featureCounts.  This
+is in response to a review who suggested that some genes have
+potentially interesting and variable transcripts.  That is a simple
+enough query to address, so let us see what we get!
 
 # A note about implementation
 
@@ -212,14 +186,13 @@ from Theresa has a series of paths which do not work in the container.
 ```{r, eval=FALSE}
 umi_spec <- make_rnaseq_spec(umi = TRUE)
 iprgc_2022_meta <- gather_preprocessing_metadata("sample_sheets/20240606_only_umd_sequenced.xlsx",
-                                                 spec = umi_spec, species = "mm39_112", verbose = FALSE,
+                                                 spec = umi_spec, species = "mm39_112", verbose = TRUE,
                                                  basedir = "preprocessing/umd_sequenced")
 colnames(iprgc_2022_meta[["new_meta"]])
 head(iprgc_2022_meta[["new_meta"]])
 ```
 
 ```{r}
-sample_sheet <- "sample_sheets/20240606_only_umd_sequenced_modified.xlsx"
 msigdb <- "reference/msigdb_v2024.1.Mm.db"
 msig_data <- NULL
 make_transparent <- function() {
@@ -233,8 +206,26 @@ make_transparent <- function() {
 }
 ```
 
+# Collect the count tables
+
+I used salmon/featurecounts/etc with CDS/mRNA features on our compute
+cluster and used the above gather function to add a column to the
+metadata containing the filenames produced.  The following reads that
+column and creates a tarball of the files.  One thing I need to do:
+modify that to accept a vetor of columns so I can easily collect r1+r2
+and stuff like that.
+
+As the name suggests, these are mRNA counts following the
+deduplication marking and removal from the initial hisat alignments
+via umitools.
+
+```{r, eval=FALSE}
+## all the input files are already xz compressed
+mrna_counts <- tar_meta_column(sample_sheet, column = "umi_dedup_mrna_count", compress = NULL)
+```
+
 I will figure out if I can leave mSigDB M2 in this image; if not, then
-any analyses depending on those gene sets will fail a priori.
+any analyses depending on those gene sets will fail.
 
 ```{r}
 m2_gsc <- try(load_gmt_signatures(signatures = msigdb,
@@ -245,18 +236,6 @@ if ("try-error" %in% class(m2_gsc)) {
   warning("Unable to load the M2 MsigDB data.")
 }
 ```
-
-From this point on, I am hoping/intending to pull liberally from
-Theresa's notebook with a diversion to compare the three datasets:
-
-* Pre-April renaming: E.g. Theresa's current dataset
-* Post renaming: Unless I am mistaken, this should be very similar to
-  the above.
-* Post deduplication: Given what I saw from the extracted logs in the
-  sample sheet, I expect this to be similar but not identical to the
-  previous two.
-
-Lets find out!   But first, annotations!
 
 # Annotation data
 
@@ -293,76 +272,25 @@ annotations, and ensembl is having troubles, the following should work
 without a problem; in addition the rda annotations are in /data of the
 container and should get loaded.
 
-### Another stategy
-
-I added a little code to my cyoa package which downloads all the
-tables at https://ftp.ensembl.org/pub/current/mysql/ for either the
-biomart database (ensembl_mart_116/ and/or mouse_mart_116) or the
-species specific database (mus_musculus_core_116_39); I then added
-some functions to hpgltools to directly query these local SQL
-databases.  This is crazy fast (< 2 seconds vs. ~ 2 minutes) compared
-to using biomart, but I do not entirely understand the schemas yet and
-so miss some potentially useful columns of interest.  If anyone is
-interested, I would be happy to pass along more complete instructions;
-I am thinking it would be nice for the community to make the lives of
-people at ensembl easier.
-
 ```{r}
 tx_gene_map <- data.frame()
-mm_annot <- try(load_biomart_annotations(species = "mmusculus", year = "2023", month = "02"))
-if ("try-error" %in% class(mm_annot)) {
-  fields <- c("ACCNUM", "ENSEMBL", "ENSEMBLTRANS", "ENTEZID", "GENENAME", "SYMBOL")
-  orgdb_annot <- load_orgdb_annotations("org.Mm.eg.db", fields = fields)
-  gene_info <- orgdb_annot[["genes"]]
-  ## Note, there are a bunch of variants of the txdb package one might use.
-  ## I do not think it matters a lot for our purposes, but I suspect that if we used
-  ## a mismatched BSgenome and tried to pull CDS sequences, that might end badly.
-  pkg <- "TxDb.Mmusculus.UCSC.mm10.knownGene"
-  tx_annot <- load_txdb_annotations(pkg)
-  transcripts <- tx_annot[["TX"]]
-  transcripts[["tx"]] <- gsub(x = transcripts[["TXNAME"]],
-                              pattern = "\\.\\d+$", replacement = "")
-  mm_annot <- merge(gene_info, transcripts, by.x = "ensembltrans", by.y = "tx")
-  rownames(mm_annot) <- make.names(mm_annot[["ensembl"]], unique = TRUE)
-} else {
-  mm_annot <- mm_annot[["annotation"]]
-  mm_annot[["txid"]] <- paste0(mm_annot[["ensembl_transcript_id"]], ".", mm_annot[["version"]])
-  rownames(mm_annot) <- make.names(mm_annot[["ensembl_gene_id"]], unique=TRUE)
-  tx_gene_map <- mm_annot[, c("txid", "ensembl_gene_id")]
-}
+##mm_annot <- try(load_biomart_annotations(species = "mmusculus", year = "2023", month = "02", overwrite = TRUE))
+mm_annot <- try(load_biomart_annotations(species = "mmusculus", archive = FALSE, overwrite = FALSE,
+                                         gene_requests = annotation_columns,
+                                         symbol_columns = label_column))
+mm_tx_annot <- mm_annot[["annotation"]]
+## yeah, the ID tag in my gff file has transcript: as a prefix, so the featureCounts outputs
+## includes it...  I will fix that inpost.
+rownames(mm_tx_annot) <- paste0("transcript:", rownames(mm_tx_annot))
+
+#mm_orgdb <- load_orgdb_annotations(
+#  orgdb = "Mus.musculus", keytype = "ACCNUM",
+#  fields = c("TXNAME", "TXTYPE", "TXCHROM", "TXSTART", "TXEND", "TXID", "TXSTRAND", "MGID"))
 ```
 
-The end result of these various annotation collections is mostly
-identical, but the column containing the MGI gene names may get
-changed.  This is pretty annoying when it comes to getting the
-container image to run perfectly in all situations; and so at this
-time it just loads the local.rda file; if one wishes to play press
-your luck with ensembl, just delete the annotation rda and re-render
-the documents.
-
-# Hisat2 summarizedExperiments
-
-The primary difference between my block and Theresa's are:
-
-1.  I am pulling the metadata directly from the
-    gather_preprocessing_metadata() above.
-2.  I am using the column 'symlink' which is just a copy of the
-    existing 'file' column with a small change so I can load it from
-    my directory without having to copy everything.
-3.  I am using the ensembl genome release 39, version 112 and so
-    pulled a somewhat newer copy of the annotation data.
-4.  The original is named 'v1', followed by 'v2' and 'v3' for the
-    other two treatments I performed.
+# Hisat2 summarizedExperiments by transcript
 
 ## Color choices and reused parameters
-
-Given that we are excluding a bunch of the older samples, the set of
-colors I expect to find is different; so I will make explicit here the
-various colors used to denote location/genotype/time/etc.
-
-April turned me onto this website 'paletton.com' for this kind of
-stuff and I will try and pick out palettes which basically match what
-I am getting with the original colors.
 
 ```{r}
 color_choices <- list(
@@ -409,7 +337,6 @@ color_choices <- list(
   "time" = list(
     "p08" = "#5E104B",
     "p15" = "#4E9231"))
-label_column <- "mgi_symbol" ## Set the column used to extract gene symbols rather than ENSG.....
 colors <- color_choices[["geno_loc"]]
 time_colors <- list(
   "p08_het_dlgn" = "#E7298A",
@@ -426,195 +353,87 @@ time_colors <- list(
   "p15_ko_scn" = "#5d7987")
 ```
 
-There is one noteworthy sample: iprgc_103, it was effectively replaced
-when April renamed the samples and so exists in the v1 data, but not
-v2/v3; they instead have the newly named samples which I called
-iprgc_123 to iprgc_130.  As a result, I copied the annotations for
-iprgc_123 to my column so that there is no discrepency in terms of
-genotype/location/time.
+## The Transcript abundances
 
-## The original count tables
+This perhaps deserves a little bit of explanation: the process for
+using UMIs goes as follows:
 
-At the moment I have not included the original counts in this
-container because we made some changes to the mapping strategy and
-also found that a couple samples were mixed up in sequencing; as a
-result I documented all of the changes in the sample sheets and
-preprocessing documents and excluded the original files.
+1.  Examine all the raw reads, extract the UMI IDs, and add them as
+    comments to the fastq file (or rewrite the read ID)
+2.  Align all reads against the genome.
+3.  Take the resulting bam file and find reads at the same location
+    with the same ID(s) and filter the alignment so that there remains
+    only 1 representative from each ID.
+4.  Count up the features of interest.
 
-This is also why some columns in the sample sheet have suffixes like
-'adh' and 'atb', those denote from whom the relevant metadata columns
-came from.
+I therefore invoked featureCounts on the umi deduplicated bam
+alignments (found in column 'umi_dedup_output_bam' BP in my copy of
+the automagically generated sample sheet) using the requisite mm38 gff
+file with transcript as the feature type and ID as the tag.
 
-```{r, eval=FALSE}
-mm38_hisat_v1 <- create_se(sample_sheet,
-                           gene_info = mm_annot,
-                           file_column = "symlink") %>%
-  set_conditions(fact = "geno_loc_atb") %>%
-  set_batches(fact = "time_atb") %>%
-  set_colors(color_choices[["geno_loc"]])
-mm38_hisat_v1
-```
-
-## Recounted tables and the deduplicated result
-
-In the following I make two more versions of the data, one remapped
-with the changes to the sample identities, and one with deduplication
-applied.
+Oh, that reminds me, I need to re-key the annotations to use that and
+I might need to check that the IDs do or do not have a prefix like
+'transcript:' or whatever...
 
 ```{r}
-mm38_hisat_v2 <- create_se(sample_sheet, gene_info = mm_annot,
-                           file_column = "hisat_count_table") %>%
-  set_conditions(fact = "geno_loc_atb") %>%
-  set_batches(fact = "time_atb") %>%
+mm38_hisat_tx <- create_se(sample_sheet, gene_info = mm_tx_annot,
+                           file_column = "umi_dedup_mrna_count") |>
+  set_conditions(fact = "geno_loc_atb") |>
+  set_batches(fact = "time_atb") |>
   set_colors(color_choices[["geno_loc"]])
-mm38_hisat_v2
-mm38_hisat_v3 <- create_se(sample_sheet, gene_info = mm_annot,
-                           file_column = "umi_dedup_output_count") %>%
-  set_conditions(fact = "geno_loc_atb") %>%
-  set_batches(fact = "time_atb") %>%
-  set_colors(color_choices[["geno_loc"]])
-mm38_hisat_v3
+mm38_hisat_tx
 
-all_fact <- paste0(colData(mm38_hisat_v3)[["time_atb"]], "_",
-                   colData(mm38_hisat_v3)[["geno_loc_atb"]])
-colData(mm38_hisat_v3)[["time_geno_loc"]] <- all_fact
+## Now that we created the data structure with IDs that include the transcript: prefix,
+## remove it...
+new_ids <- gsub(x = rownames(assay(mm38_hisat_tx)), pattern = "^transcript:", replacement = "")
+rownames(mm38_hisat_tx) <- new_ids
+rownames(mm_tx_annot) <- gsub(x = rownames(mm_tx_annot), pattern = "^transcript:", replacement = "")
+all_fact <- paste0(colData(mm38_hisat_tx)[["time_atb"]], "_",
+                   colData(mm38_hisat_tx)[["geno_loc_atb"]])
+colData(mm38_hisat_tx)[["time_geno_loc"]] <- all_fact
+dim(assay(mm38_hisat_tx))
+head(assay(mm38_hisat_tx))
+head(rowData(mm38_hisat_tx))
 ```
-
-## Archive count tables for the singularity container
-
-```{r}
-mrna_tables <- tar_meta_column(mm38_hisat_v3, column = "umi_dedup_mrna_count")
-```
-
-
-
-Note the end of the previous block, I created a factor out of the
-combination of time, genotype, and location.  In a future invocation
-of this notebook, I will change the pairwise comparisons to add each
-of these three factors to the statistical model instead of this.  The
-code to do that is not _quite_ ready yet.
 
 # Non-zero Counts per Sample
 
-Let's look at the number of non-zero genes for all samples versus the
-coverage.
-
-As above, this does not get run because I did not copy the count tables.
-
-```{r eval=FALSE}
-v1_nonzero <- plot_nonzero(mm38_hisat_v1)
-v1_nonzero
-```
-
-But these do!
+A neat little change I just made: when null set the y-intercept to the
+mean percentage of units observed (transcripts in this case).
 
 ```{r}
-plot_legend(mm38_hisat_v2)
-v2_nonzero  <- plot_nonzero(mm38_hisat_v2, y_intercept = 0.65)
-v2_nonzero
-pp(file = "01diagnostic_images/nonzero_v2_unfiltered.pdf")
-v2_nonzero[["plot"]]
-plotted <- dev.off()
+tx_nonzero  <- plot_nonzero(mm38_hisat_tx)
+pp(file = "01diagnostic_images_tx/nonzero_tx_unfiltered.pdf", image = tx_nonzero[["plot"]])
 
-v3_nonzero  <- plot_nonzero(mm38_hisat_v3, y_intercept = 0.65)
-v3_nonzero
-pp(file = "01diagnostic_images/nonzero_v3_unfiltered.pdf")
-v3_nonzero[["plot"]]
-plotted <- dev.off()
+tx_libsize <- plot_libsize(mm38_hisat_tx)
+pp(file = "01diagnostic_images_tx/quantsize_unfiltered.pdf", image = tx_libsize[["plot"]])
 ```
-
-Oh wow, I did not expect such a profound effect on the cpm values on
-the more saturated libraries.  I guess in retrospect I should have?
-
-Also note to self, we are not messing with p60.
 
 ## Exclude p60
 
 ```{r}
-mm38_hisat_v2 <- subset_se(mm38_hisat_v2, subset = "time_atb!='p60'")
-mm38_hisat_v3 <- subset_se(mm38_hisat_v3, subset = "time_atb!='p60'")
+mm38_hisat_tx <- subset_se(mm38_hisat_tx, subset = "time_atb!='p60'")
 ```
 
 ## Replot the nonzero gene plots
 
 ```{r}
-v2_nonzero_filt <- plot_nonzero(mm38_hisat_v2, plot_labels = FALSE)
-pp(file = "01diagnostic_images/nonzero_v2_filt.pdf")
-v2_nonzero_filt[["plot"]]
-plotted <- dev.off()
-
-v3_nonzero_filt <- plot_nonzero(mm38_hisat_v3, plot_labels = FALSE)
-pp(file = "01diagnostic_images/nonzero_v3_filt.pdf")
-v3_nonzero_filt[["plot"]]
-plotted <- dev.off()
-```
-
-Once again, I do not want to lose the previous code, so here is the v1 invocation
-
-```{r, eval=FALSE}
-mm38_hisat_v1 <- subset_se(mm38_hisat_v1, subset = "time_atb!='p60'")
+tx_nonzero_filt <- plot_nonzero(mm38_hisat_tx, plot_labels = FALSE)
+pp(file = "01diagnostic_images_tx/nonzero_tx_filt.pdf", image = tx_nonzero_filt[["plot"]])
 ```
 
 # Quick PCA, then return to Theresa's document
 
 ```{r}
-v2_norm <- normalize(mm38_hisat_v2, transform = "log2", convert = "cpm",
+tx_norm <- normalize(mm38_hisat_tx, transform = "log2", convert = "cpm",
                      norm = "quant", filter = TRUE)
-v2_norm_pca <- plot_pca(v2_norm)
-v2_norm_pca
-pp(file = "01diagnostic_images/v2_norm_pca.pdf")
-v2_norm_pca[["plot"]]
-plotted <- dev.off()
-
-v3_norm <- normalize(mm38_hisat_v3, transform = "log2", convert = "cpm",
-                     norm = "quant", filter = TRUE)
-v3_norm_pca <- plot_pca(v3_norm)
-v3_norm_pca
-pp(file = "01diagnostic_images/v3_norm_pca.pdf")
-v3_norm_pca[["plot"]]
-plotted <- dev.off()
+tx_norm_pca <- plot_pca(tx_norm)
+pp(file = "01diagnostic_images_tx/tx_norm_pca.pdf", image = tx_norm_pca[["plot"]])
 ```
-
-Ibid.
-
-```{r, eval=FALSE}
-v1_norm <- normalize(mm38_hisat_v1, transform = "log2", convert = "cpm",
-                     norm = "quant", filter = TRUE)
-plot_pca(v1_norm)
-```
-
-To my eyes it looks like we just have 1 weirdo p15 sample?
-Deduplication had a minor but significant effect on the PCA.
-
-With that in mind, let us look at Theresa's WORKING document and see
-what we can recapitulate.
-
-Theresa's document: The TRAP protocol has some variability which is
-introduced at different stpdf including homogenization, antibody
-labeling, pulldown efficiency/specificity, sample handling during
-cleanup, and library prep/sequencing. We know from Rashmi's QC
-that there is variability at the level of pulldown efficiency (amount
-of RNA isolated). She is doing a good job of keeping track of this for
-all her samples and we have validated her P8 results (attached
-supplementary figure 3D). We consistently see clear differences
-between control and cre samples for the retina, which makes sense
-because the cell bodies are in the retina. The target tissue
-differences are smaller, which also makes sense for axon-TRAP. We
-think that some of her P15 samples are not good based on low amounts
-of isolated RNA from cre(+) retina samples. We plan to drop these
-samples and not perform additional isolations at this time
-point. Based on this (and the general lack of large developmental
-effects), we were planning to focus on presenting the P8 data only in
-the paper. Interested to hear your thoughts in this...
-
-My notes: Theresa's first operations in this notebook were to:
-
-1.  Set location as condition, genotype as batch.
-2.  Perform PCA before/after sva.
 
 ```{r}
-v3_loc_geno <- set_conditions(mm38_hisat_v3, fact = "location_atb",
-                              colors = color_choices[["location"]]) %>%
+tx_loc_geno <- set_conditions(mm38_hisat_tx, fact = "location_atb",
+                              colors = color_choices[["location"]]) |>
   set_batches(fact = "genotype_atb")
 ```
 
@@ -628,84 +447,96 @@ Thus I will use different suffix letters to denote various
 normalizations employed, and if they turn out the same I will pick one arbitrarily.
 
 ```{r}
-loc_geno_nq <- normalize(v3_loc_geno, transform = "log2", convert = "cpm",
+loc_geno_nq <- normalize(tx_loc_geno, transform = "log2", convert = "cpm",
                          filter = TRUE, norm = "quant")
 location_genotype_pca <- plot_pca(loc_geno_nq)
-pp(file = "01diagnostic_images/location_genotype_norm_pca.pdf")
-location_genotype_pca[["plot"]]
-plotted <- dev.off()
-location_genotype_pca
-## ok, I have two weirdo samples which look very much like they are actually dlgn.
-## These are sample IDs iprgc_66 and iprgc_130
+pp(file = "01diagnostic_images_tx/location_genotype_norm_pca.pdf",
+   image = location_genotype_pca[["plot"]])
 
-loc_geno_nt <- normalize(v3_loc_geno, transform = "log2", convert = "cpm",
+loc_geno_nt <- normalize(tx_loc_geno, transform = "log2", convert = "cpm",
                          filter = TRUE, norm = "tmm")
 location_genotype_tmm_pca <- plot_pca(loc_geno_nt)
-pp(file = "01diagnostic_images/location_genotype_tmm_pca.pdf")
-location_genotype_tmm_pca[["plot"]]
-plotted <- dev.off()
-location_genotype_tmm_pca
+pp(file = "01diagnostic_images_tx/location_genotype_tmm_pca.pdf", image = location_genotype_tmm_pca[["plot"]])
 ```
 
-A random thought about these PCA plots, it might be worth while to add
-a panel below the legend with the sample numbers per condition/batch.
-
-Of course, the same information is provided in a more fun fashion via
-my silly sankey function:
-
 ```{r}
-sample_sankey <- plot_meta_sankey(v3_loc_geno, color_choices = color_choices,
+sample_sankey <- plot_meta_sankey(tx_loc_geno, color_choices = color_choices,
                                   factors = c("genotype_atb", "location_atb", "time_atb"))
-pp(file = "01diagnostic_images/design_sankey.pdf")
-sample_sankey[["ggplot"]]
-plotted <- dev.off()
-sample_sankey
+pp(file = "01diagnostic_images_tx/design_sankey.pdf", image = sample_sankey[["plot"]])
 ```
 
-# A Short conversation with Rashmi
+Re-purpose these expression plots to examine one Opn4 transcript.
+This will by some necessity be arbitrary.
 
-Rashmi came by and we discussed the samples a little.  She suggested
-that is likely that we will need to exclude the 202205 samples, these
-may be identified by a few ways, most easily I think via the
-'project_ah' column, they are the 021_1 samples.
+It is at this moment that I realized (as I am almost certain I told
+myself when I started) using the hisat-derived tx counts is wrong
+because hisat->featureCounts has no good way to allocate multi-hits to
+multiple transcripts and will therefore discount them.  If I want to
+do this in any sort of reliable way, I really need to re-extract the
+deduplicate reads from the umitools bam file and run salmon/kallisto.
+This is somewhat annoying because the various tools I have for extract
+bam reads really hate the way umitools formats the bam file and freak
+out.  I can force it, but I think I will lose a potentially
+significant number of reads, let us go look...
 
-My sense was that she concurred with my interpretation of the umi
-deduplication, so I will continue using the deduplicated results
-exclusively, at least for now.
+(If you with to follow along, go back to the preprocessing document
+which I should have included in the singularity container)  I will do
+one of the following:
 
-# Melanopsin Sanity Check
+1.  Use gatk or bamtools to create deduplicated fastq files and use
+    them with salmon.
+2.  Use salmon with the deduplicated bam files from hisat.
 
-One of Theresa's first checks was wisely for melanopsin.  Let us
-repeat a version of this:
+I am not sure right now which I want to do.  I kind of like the idea
+of having deduplicated fastq files so that I can try some other stuff
+with them (kraken, for example)
 
-An important note: Indrajeet Patil removed the groupedstats and its
-associated plotting library from CRAN/github/etc.  I am not certain
-what happened, but that necessitates a change in how I plot this.
+```{r, eval=FALSE}
+## ggstatsplot has appeared and disappeared a few times from cran recently,
+## I am not sure if it will work therefore, so figured I should disable this block
+## for the moment.
 
-```{r}
+## I did a search at ensembl for the various opn4 transcript IDs:
+## ENSMUST00000022331, ENSMUST00000168444, ENSMUST00000226806
+ids <- c("ENSMUST00000022331", "ENSMUST00000168444", "ENSMUST00000226806")
+ids %in% rownames(loc_geno_nt)
+ids <- c("ENSMUST00000022331", "ENSMUST00000168444")
+
 opn4_exprs <- data.frame(combined = colData(loc_geno_nt)[["geno_loc_atb"]],
                          location = colData(loc_geno_nt)[["location_atb"]],
                          genotype = colData(loc_geno_nt)[["genotype_atb"]],
-                         opn = assay(loc_geno_nt)["ENSMUSG00000021799", ])
+                         opn4 = assay(tx_loc_geno)[ids[1], ])
 
-## groupedstats::grouped_summary(opn4_exprs, location, opn)
-## opn4_location <- ggbetweenstats(data = opn4_exprs, x = location, y = opn)
-## pp(file = "images/ggbetween_location.pdf")
-## opn4_location
-## plotted <- dev.off()
-## opn4_location
+groupedstats::grouped_summary(opn4_exprs, location, opn)
+opn4_location <- ggstatsplot::ggbetweenstats(data = opn4_exprs, x = location, y = opn)
+pp(file = "images_tx/ggbetween_location.pdf")
+opn4_location
+plotted <- dev.off()
+opn4_location
+```
 
-## opn4_genotype <- ggbetweenstats(data = opn4_exprs, x = genotype, y = opn)
-## pp(file = "images/ggbetween_location.pdf")
-## opn4_genotype
-## plotted <- dev.off()
-## opn4_genotype
+# Two noteworthy genes with potentially different transcript abundances
 
-## opn4_combined <- ggbetweenstats(data = opn4_exprs, x = combined, y = opn)
-## pp(file = "images/ggbetween_combined.pdf")
-## opn4_combined
-## plotted <- dev.off()
-## opn4_combined
+One reviewer suggested checking out the transcript-level abundances and noted two
+genes in particular as potentially interesting: Nlgn3 and Ncam1.  Let us take a
+moment and see what they look like across the various metadata factors of interest.
+
+## Grab the tx annotations for them
+
+```{r}
+nlgn3_idx <- grepl(x = rowData(mm38_hisat_tx)[["external_transcript_name"]], pattern = "^Nlgn3\\-")
+sum(nlgn3_idx)
+nlgn3_annot <- rowData(mm38_hisat_tx)[nlgn3_idx, ]
+nlgn3_ids <- rownames(rowData(mm38_hisat_tx))[nlgn3_idx]
+assay(mm38_hisat_tx)[nlgn3_ids, ]
+## Looks like
+
+ncam1_idx <- grepl(x = rowData(mm38_hisat_tx)[["external_transcript_name"]], pattern = "^Ncam1\\-")
+sum(ncam1_idx)
+rowData(rowData(mm38_hisat_tx))[ncam1_idx, ]
+ncam1_annot <- as.data.frame(rowData(mm38_hisat_tx))[ncam1_idx, ]
+ncam1_ids <- rownames(rowData(mm38_hisat_tx))[ncam1_idx]
+assay(mm38_hisat_tx)[ncam1_ids, ]
 ```
 
 ok, so I plotted the question a bit differently, but got the same
@@ -734,16 +565,16 @@ Theresa's first pca was of log2 cpm values.  I might add quantile/tmm
 to this?
 
 ```{r}
-v3_location <- set_conditions(mm38_hisat_v3, fact = "location_atb") %>%
-  set_batches(fact = "genotype_atb") %>%
+tx_location <- set_conditions(mm38_hisat_tx, fact = "location_atb") |>
+  set_batches(fact = "genotype_atb") |>
   set_colors(color_choices[["location"]])
-v3_location_norm <- normalize(v3_location, filter = TRUE, norm = "quant",
+tx_location_norm <- normalize(tx_location, filter = TRUE, norm = "quant",
                                    transform = "log2", convert = "cpm")
-v3_location_pca <- plot_pca(v3_location_norm)
-pp(file = "01diagnostic_images/v3_location_norm_pca.pdf")
-v3_location_pca
+tx_location_pca <- plot_pca(tx_location_norm)
+pp(file = "01diagnostic_images_tx/tx_location_norm_pca.pdf")
+tx_location_pca
 dev.off()
-v3_location_pca
+tx_location_pca
 ```
 
 Once again we see that samples iprgc_66 and iprgc_130 are likely
@@ -757,26 +588,23 @@ Theresa has a nice change to the PCA plotter in which she sets the
 alpha channel as an additional visual queue for a metadata factor...
 
 ```{r}
-mm38_hisat_v3 <- subset_se(mm38_hisat_v3, subset="sampleid!='iprgc_130'") %>%
+mm38_hisat_tx <- subset_se(mm38_hisat_tx, subset="sampleid!='iprgc_130'") |>
   subset_se(subset="sampleid!='iprgc_66'")
-v3_location <- set_conditions(mm38_hisat_v3, fact = "location_atb") %>%
-  set_batches(fact = "genotype_atb") %>%
+tx_location <- set_conditions(mm38_hisat_tx, fact = "location_atb") |>
+  set_batches(fact = "genotype_atb") |>
   set_colors(color_choices[["location"]])
 
-v3_location_norm <- normalize(v3_location, filter = TRUE, norm = "quant",
+tx_location_norm <- normalize(tx_location, filter = TRUE, norm = "quant",
                                    transform = "log2", convert = "cpm")
-filtered_location_pca <- plot_pca(v3_location_norm)
-pp(file = "02filtered_images/filtered_location_pca.pdf")
+filtered_location_pca <- plot_pca(tx_location_norm)
+pp(file = "02filtered_images_tx/filtered_location_pca.pdf")
 filtered_location_pca[["plot"]]
 plotted <- dev.off()
 filtered_location_pca
 
-removed_sankey <- plot_meta_sankey(v3_location, color_choices = color_choices,
+removed_sankey <- plot_meta_sankey(tx_location, color_choices = color_choices,
                                    factors = c("genotype_atb", "location_atb", "time_atb"))
-pp(file = "02filtered_images/filtered_sankey.pdf")
-removed_sankey[["ggplot"]]
-plotted <- dev.off()
-removed_sankey
+pp(file = "02filtered_images_tx/filtered_sankey.pdf", image = removed_sankey[["plot"]])
 ```
 
 Here is Theresa's text, recall once again that I do not have some of
@@ -834,7 +662,7 @@ of the following:
   variancePartition(@hoffmanVariancePartitionInterpretingDrivers2016).
 
 ```{r}
-mm38_p8_retina <- subset_se(mm38_hisat_v3, subset = "time_atb=='p08' & location_atb=='retina'")
+mm38_p8_retina <- subset_se(mm38_hisat_tx, subset = "time_atb=='p08' & location_atb=='retina'")
 mm_normal_p8_ret_de <- all_pairwise(mm38_p8_retina, model_svs = "svaseq",
                                     model_fstring = "~ 0 + condition", filter = TRUE)
 mm_normal_p8_ret_de
@@ -847,21 +675,21 @@ In my previous iteration, I got 3632 genes in the unique(c()) or het+ko.
 ```{r}
 deseq_only <- deseq_pairwise(mm38_p8_retina, model_svs = "svaseq",
                              model_fstring = default_fstring, filter = TRUE)
-deseq_hetkeeper_genes <- deseq_only$all_tables$wt_retina_vs_het_retina %>%
+deseq_hetkeeper_tx <- deseq_only$all_tables$wt_retina_vs_het_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-deseq_kokeeper_genes <- deseq_only$all_tables$wt_retina_vs_ko_retina %>%
+deseq_kokeeper_tx <- deseq_only$all_tables$wt_retina_vs_ko_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-deseq_keepergenes <- unique(c(rownames(deseq_hetkeeper_genes),
-                        rownames(deseq_kokeeper_genes)))
-length(deseq_keepergenes)
+deseq_keepertx <- unique(c(rownames(deseq_hetkeeper_tx),
+                        rownames(deseq_kokeeper_tx)))
+length(deseq_keepertx)
 
-deseq_pair_hetkeeper_genes <- mm_normal_p8_ret_de$deseq$all_tables$wt_retina_vs_het_retina %>%
+deseq_pair_hetkeeper_tx <- mm_normal_p8_ret_de$deseq$all_tables$wt_retina_vs_het_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-deseq_pair_kokeeper_genes <- mm_normal_p8_ret_de$deseq$all_tables$wt_retina_vs_ko_retina %>%
+deseq_pair_kokeeper_tx <- mm_normal_p8_ret_de$deseq$all_tables$wt_retina_vs_ko_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-deseq_pair_keepergenes <- unique(c(rownames(deseq_pair_hetkeeper_genes),
-                        rownames(deseq_pair_kokeeper_genes)))
-length(deseq_pair_keepergenes)
+deseq_pair_keepertx <- unique(c(rownames(deseq_pair_hetkeeper_tx),
+                        rownames(deseq_pair_kokeeper_tx)))
+length(deseq_pair_keepertx)
 ```
 
 The following invocation performed by Theresa filters the wt/het
@@ -889,11 +717,11 @@ prove to myself that I understood and got the same answer.
 ```{r}
 wt_het_keeper <- list("het_vs_wt" = c("het_retina", "wt_retina"))
 het_wt_table <- combine_de_tables(
-  mm_normal_p8_ret_de, keepers = wt_het_keeper, label_column = label_column,
-  excel = "03theresa_comparison_excel/het_retina_control.xlsx")
+  mm_normal_p8_ret_de, keepers = wt_het_keeper, label_column = tx_label_column,
+  excel = "03theresa_comparison_excel_tx/het_retina_control.xlsx")
 wanted_sig <- extract_significant_genes(
   het_wt_table, lfc = 0.25, according_to = "deseq",
-  excel = "03theresa_comparison_excel/het_retina_control-sig.xlsx")
+  excel = "03theresa_comparison_excel_tx/het_retina_control-sig.xlsx")
 wanted_het_increased <- wanted_sig[["deseq"]][["ups"]][["het_vs_wt"]]
 increased_het_genes <- rownames(wanted_het_increased)
 ```
@@ -902,16 +730,16 @@ Here are Theresa's next lines:
 
 ```{r}
 mm_de_normal_p8_ret <- mm_normal_p8_ret_de
-hetkeeper_genes <- mm_de_normal_p8_ret$deseq$all_tables$wt_retina_vs_het_retina %>%
+hetkeeper_tx <- mm_de_normal_p8_ret$deseq$all_tables$wt_retina_vs_het_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-kokeeper_genes <- mm_de_normal_p8_ret$deseq$all_tables$wt_retina_vs_ko_retina %>%
+kokeeper_tx <- mm_de_normal_p8_ret$deseq$all_tables$wt_retina_vs_ko_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-keepergenes <- unique(c(rownames(hetkeeper_genes),
-                        rownames(kokeeper_genes)))
+keepertx <- unique(c(rownames(hetkeeper_tx),
+                        rownames(kokeeper_tx)))
 ## We know a priori that Opn4 is ENSMUSG00000021799
 ## I do not expect to see it in this set, it should be higher in wt
 ## retina vs ko retina by a significant margin.
-"ENSMUSG00000021799" %in% keepergenes
+## "ENSMUSG00000021799" %in% keepertx
 ## Oooohhh but it _is_ higher in het vs. wt, as we saw in
 ## the violin plot earlier.
 ```
@@ -946,10 +774,10 @@ reason I keep thinking the small subunit.
 ## Prove I understood
 
 ```{r}
-hetkeeper_genes <- mm_normal_p8_ret_de$deseq$all_tables$wt_retina_vs_het_retina %>%
+hetkeeper_tx <- mm_normal_p8_ret_de$deseq$all_tables$wt_retina_vs_het_retina |>
   filter(logFC <= -0.25 & adj.P.Val <= 0.05)
-testthat::expect_true(nrow(hetkeeper_genes) == length(increased_het_genes))
-taa_keepers <- sort(rownames(hetkeeper_genes))
+testthat::expect_true(nrow(hetkeeper_tx) == length(increased_het_genes))
+taa_keepers <- sort(rownames(hetkeeper_tx))
 atb_keepers <- sort(increased_het_genes)
 testthat::expect_equal(taa_keepers, atb_keepers)
 ```
@@ -959,11 +787,11 @@ Yay! I can read!  Now let us repeat for the KO vs wt
 ```{r}
 wt_ko_keeper <- list("ko_vs_wt" = c("ko_retina", "wt_retina"))
 ko_wt_table <- combine_de_tables(
-  mm_normal_p8_ret_de, keepers = wt_ko_keeper, label_column = label_column,
-  excel = "03theresa_comparison_excel/ko_retina_control.xlsx")
+  mm_normal_p8_ret_de, keepers = wt_ko_keeper, label_column = tx_label_column,
+  excel = "03theresa_comparison_excel_tx/ko_retina_control.xlsx")
 wanted_sig <- extract_significant_genes(
   ko_wt_table, lfc = 0.25, according_to = "deseq",
-  excel = "03theresa_comparison_excel/ko_retina_control-sig.xlsx")
+  excel = "03theresa_comparison_excel_tx/ko_retina_control-sig.xlsx")
 
 wanted_ko_increased <- wanted_sig[["deseq"]][["ups"]][["ko_vs_wt"]]
 increased_ko_genes <- rownames(wanted_ko_increased)
@@ -978,7 +806,7 @@ This was followed by a couple of merge operations of a little bit of
 the annotation data; I am not sure I understand the goal yet...
 
 Here is her code. I copied the annotation 'mgi_symbol' column to
-'external_synonym' so that I need not change any of her code.  I am
+'external_gene_name' so that I need not change any of her code.  I am
 assuming this is the appropriate column of interest, I do not know
 this for certain, but it seems quite likely.
 
@@ -989,18 +817,18 @@ set_sig_limma <- function(limma_tbl, factors = NULL) {
   if (is.null(factors)) {
     #set significance for plotting colors
     limma_tbl$Significance <- NA
-    limma_tbl[abs(limma_tbl$logFC) < 1 | limma_tbl$adj.P.Val > .05, "Significance"] <- "Not \nEnriched"
-    limma_tbl[limma_tbl$logFC >= 1  & limma_tbl$adj.P.Val <= .05, ][["Significance"]] <- "Disease \nUpregulated"
-    limma_tbl[limma_tbl$logFC <= -1  & limma_tbl$adj.P.Val <= .05, ][["Significance"]] <- "Disease \nDownregulated"
+    limma_tbl[abs(limma_tbl$logFC) <= 1.0 | limma_tbl$adj.P.Val >= 0.05, "Significance"] <- "Not \nEnriched"
+    limma_tbl[limma_tbl$logFC >= 1.0  & limma_tbl$adj.P.Val <= 0.05, ][["Significance"]] <- "Disease \nUpregulated"
+    limma_tbl[limma_tbl$logFC <= -1.0  & limma_tbl$adj.P.Val <= 0.05, ][["Significance"]] <- "Disease \nDownregulated"
     limma_tbl$Significance <- factor(limma_tbl$Significance, levels = c("Upregulated", "Downregulated",  "Not \nEnriched"))
   } else {
     limma_tbl$Significance <- NA
-    limma_tbl[abs(limma_tbl$logFC) < 1 | limma_tbl$adj.P.Val > .05, "Significance"] <- "Not \nEnriched"
-    if(nrow(limma_tbl[limma_tbl$logFC >= 1  & limma_tbl$adj.P.Val <= .05, ]) != 0) {
-      limma_tbl[limma_tbl$logFC >= 1  & limma_tbl$adj.P.Val <= .05, ][["Significance"]] <- factors[1]
+    limma_tbl[abs(limma_tbl$logFC) <= 1.0 | limma_tbl$adj.P.Val >= 0.05, "Significance"] <- "Not \nEnriched"
+    if(nrow(limma_tbl[limma_tbl$logFC >= 1.0  & limma_tbl$adj.P.Val <= 0.05, ]) != 0) {
+      limma_tbl[limma_tbl$logFC >= 1.0  & limma_tbl$adj.P.Val <= 0.05, ][["Significance"]] <- factors[1]
     }
-    if (nrow(limma_tbl[limma_tbl$logFC <= -1  & limma_tbl$adj.P.Val <= .05, ]) != 0) {
-      limma_tbl[limma_tbl$logFC <= -1  & limma_tbl$adj.P.Val <= .05, ][["Significance"]] <- factors[2]
+    if (nrow(limma_tbl[limma_tbl$logFC <= -1.0 & limma_tbl$adj.P.Val <= 0.05, ]) != 0) {
+      limma_tbl[limma_tbl$logFC <= -1.0  & limma_tbl$adj.P.Val <= 0.05, ][["Significance"]] <- factors[2]
     }
     limma_tbl$Significance <- factor(limma_tbl$Significance, levels = c(factors,  "Not \nEnriched"))
   }
@@ -1011,19 +839,10 @@ set_sig_limma <- function(limma_tbl, factors = NULL) {
 ### Combining het/wt and ko/wt
 
 ```{r}
-mm_annot[["external_synonym"]] <- mm_annot[["mgi_symbol"]]
-keepergenes <- unique(c(rownames(hetkeeper_genes), rownames(kokeeper_genes)))
-length(keepergenes)
-annots_to_merge <- mm_annot %>%
-  select(ensembl_gene_id, external_synonym) %>%
-  filter(ensembl_gene_id %in%
-           rownames(mm_de_normal_p8_ret$deseq$all_tables$ko_retina_vs_het_retina)) %>%
-  distinct()
-mm_de_normal_p8_ret$deseq$all_tables$ko_retina_vs_het_retina <- merge(
-  mm_de_normal_p8_ret$deseq$all_tables$ko_retina_vs_het_retina, annots_to_merge,
-  by.x = 0, by.y = "ensembl_gene_id", all.x = TRUE)
-df <- mm_de_normal_p8_ret$deseq$all_tables$ko_retina_vs_het_retina %>%
-  dplyr::mutate(logFC = -logFC) %>%
+keepertx <- unique(c(rownames(hetkeeper_tx), rownames(kokeeper_tx)))
+length(keepertx)
+df <- mm_de_normal_p8_ret$deseq$all_tables$ko_retina_vs_het_retina |>
+  dplyr::mutate(logFC = -logFC) |>
   set_sig_limma(factors = c("Het Enriched", "KO Enriched"))
 ```
 
@@ -1038,13 +857,10 @@ just do that.
 ```{r}
 both_increased_genes <- unique(c(increased_het_genes, increased_ko_genes))
 ## arbitrairly grab all genes from one of my data structures.
-all_genes <- rownames(exprs(mm38_hisat_v3))
+all_genes <- rownames(assay(mm38_hisat_tx))
 exclude_idx <- all_genes %in% both_increased_genes
 summary(exclude_idx)
 ```
-
-My April 2025 version of this shows 21,793 and 3,632 genes in this
-set.  Is that still true?  (As of 20260311, it is!)
 
 ```{r}
 exclude_increased_genes <- all_genes[exclude_idx]
@@ -1058,21 +874,21 @@ retina_keepers <- list(
 ## exclusion.
 p8_retina_tables <- combine_de_tables(
   mm_normal_p8_ret_de, keepers = retina_keepers,
-  wanted_genes = both_increased_genes, label_column = label_column,
-  excel = glue("03theresa_comparison_excel/p8_retina_kept_genes_increased_in_wt_tables-v{ver}.xlsx"))
+  wanted_genes = both_increased_genes, label_column = tx_label_column,
+  excel = glue("03theresa_comparison_excel_tx/p8_retina_kept_tx_increased_in_wt_tables-v{ver}.xlsx"))
 
 p8_retina_sig <- extract_significant_genes(
   p8_retina_tables, according_to = "deseq",
-  excel = glue("03theresa_comparison_excel/p8_retina_kept_genes_increased_in_wt_sig-v{ver}.xlsx"))
+  excel = glue("03theresa_comparison_excel_tx/p8_retina_kept_genes_increased_in_wt_sig-v{ver}.xlsx"))
 
 opposite_p8_retina_tables <- combine_de_tables(
   mm_normal_p8_ret_de, keepers = retina_keepers,
-  excludes = both_increased_genes, label_column = label_column,
-  excel = glue("03theresa_comparison_excel/p8_retina_removed_genes_increased_in_wt_tables-v{ver}.xlsx"))
+  excludes = both_increased_genes, label_column = tx_label_column,
+  excel = glue("03theresa_comparison_excel_tx/p8_retina_removed_genes_increased_in_wt_tables-v{ver}.xlsx"))
 
 opposite_p8_retina_sig <- extract_significant_genes(
   p8_retina_tables, according_to = "deseq",
-  excel = glue("03theresa_comparison_excel/p8_retina_removed_genes_increased_in_wt_sig-v{ver}.xlsx"))
+  excel = glue("03theresa_comparison_excel_tx/p8_retina_removed_genes_increased_in_wt_sig-v{ver}.xlsx"))
 ```
 
 # Filtering out non-specific genes and examining the results
@@ -1093,19 +909,19 @@ add some additional GSEA/enrichment tasks once the non-specific
 filtering is complete.
 
 ```{r}
-df <- df %>%
-  filter(Row.names %in% keepergenes)
-labels_ups <- df %>%
-  filter(adj.P.Val <= 0.05 & abs(logFC) > 1) %>%
-  arrange(logFC) %>%
+df <- df |>
+  filter(rownames(df) %in% keepertx)
+labels_ups <- df |>
+  filter(adj.P.Val <= 0.05 & abs(logFC) >= 1.0) |>
+  arrange(logFC) |>
   head(n = 9)
-labels_downs <- df %>%
-  filter(adj.P.Val <= 0.05 & abs(logFC) > 1) %>%
-  arrange(-logFC) %>%
+labels_downs <- df |>
+  filter(adj.P.Val <= 0.05 & abs(logFC) >= 1.0) |>
+  arrange(-logFC) |>
   head(n = 11)
 labels <- rbind(labels_ups, labels_downs)
 res_tbl <- df
-DEplot <- ggplot(res_tbl, aes(x = logFC, y = -log10(adj.P.Val), label = external_synonym)) +
+DEplot <- ggplot(res_tbl, aes(x = logFC, y = -log10(adj.P.Val))) +
   geom_point(aes(colour = Significance), size = 4) +
   geom_vline(xintercept = c(-1, 1)) +
   geom_hline(yintercept = -log10(0.05)) +
@@ -1114,28 +930,22 @@ DEplot <- ggplot(res_tbl, aes(x = logFC, y = -log10(adj.P.Val), label = external
   ylab("-log10(p-value)") +
   theme(legend.position = "right") +
   scale_color_manual(values = c("#F8766D", "#00BFC4", "Grey")) +
-  geom_label_repel(
-    data = filter(df,
-                  ## c('s5_het_dlgn', 's5_het_ret', 's5_het_scn')),
-                  external_synonym %in% labels$external_synonym),
-    ## nudge_x = -0.5,
-    nudge_y = 3, max.overlaps = 15) +
   xlim(c(-3, 6))
 
-pp(file = "03theresa_comparison_images/p08_retina_DE_1312024.pdf")
+pp(file = "03theresa_comparison_images_tx/p08_retina_DE_1312024.pdf")
 DEplot
 plotted <- dev.off()
 DEplot
-write_xlsx(df, excel = "excel/retinahet_vs_retinako_WTfiltered.xlsx")
+write_xlsx(df, excel = "excel_tx/retinahet_vs_retinako_WTfiltered.xlsx")
 ```
 
 ## How many ups/downs
 
 ```{r}
-ko_enriched <- df %>%
+ko_enriched <- df |>
   filter(Significance == "KO Enriched")
 nrow(ko_enriched)
-het_enriched <-  df %>%
+het_enriched <-  df |>
   filter(Significance == "Het Enriched")
 nrow(het_enriched)
 ```
@@ -1143,20 +953,19 @@ nrow(het_enriched)
 ## category enrichment/GSEA
 
 ```{r}
-regulated_genes <- res_tbl %>%
-  filter(adj.P.Val <= 0.05) %>%
-  arrange(logFC) %>%
-  select(Row.names, logFC, adj.P.Val, external_synonym, Significance) %>%
-  filter(abs(logFC) >= 1)
-## gsea_result_ko <- gost(query = ko_genes$external_synonym,
+regulated_genes <- res_tbl |>
+  filter(adj.P.Val <= 0.05) |>
+  arrange(logFC) |>
+  filter(abs(logFC) >= 1.0)
+## gsea_result_ko <- gost(query = ko_genes$external_gene_name,
 ##                        organism = "mmusculus",
 ##                        evcodes = TRUE,
 ##                        ordered_query = TRUE)
-gsea_result_het <- gost(query = het_enriched$external_synonym,
+gsea_result_het <- gost(query = het_enriched[["Row.names"]],
                         organism = "mmusculus",
                         evcodes = TRUE,
                         ordered_query = TRUE)
-##gsea_result_alldysregulated <- gost(query = alldysregulated_genes$external_synonym,
+##gsea_result_alldysregulated <- gost(query = alldysregulated_genes$external_gene_name,
 ##                                    organism = "mmusculus",
 ##                                    evcodes = TRUE,
 ##                                    ordered_query = TRUE)
@@ -1171,7 +980,7 @@ alldysregulated_genes[["Row.names"]] <- NULL
 
 het_gp <- simple_gprofiler(rownames(alldysregulated_genes),
                            species = "mmusculus",
-                           excel = glue("excel/het_gprofiler-v{ver}.xlsx"))
+                           excel = glue("excel_tx/het_gprofiler-v{ver}.xlsx"))
 het_gp
 enrichplot::dotplot(het_gp[["BP_enrich"]])
 gp_pair <- enrichplot::pairwise_termsim(het_gp[["BP_enrich"]])
@@ -1209,30 +1018,26 @@ include what we just looked at).
 ```{r}
 p08_retina_all_cp <- all_cprofiler(
   p8_retina_sig, p8_retina_tables, orgdb = "org.Mm.eg.db", orgdb_from = orgdb_from,
-  excel = "03theresa_comparison_excel/cprofiler_p08_retina.xlsx")
+  excel = "03theresa_comparison_excel_tx/cprofiler_p08_retina.xlsx")
 
 enrichplot::dotplot(p08_retina_all_cp[["ko_vs_het_up"]][["go_data"]][["MF_enrich"]])
 p08_topn_gsea <- plot_topn_gsea(p08_retina_all_cp)
 
-pp(file = "03theresa_comparison_images/gsea_p08_retina_ko_vs_het_top_hit.pdf")
+pp(file = "03theresa_comparison_images_tx/gsea_p08_retina_ko_vs_het_top_hit.pdf",)
 p08_topn_gsea[["GO_ko_vs_het_up"]][[1]]
-plotted <- dev.off()
+dev.off()
 
 p08_topn_gsea[["GO_ko_vs_het_up"]][[1]]
 p08_topn_gsea[["GO_ko_vs_het_up"]][[2]]
 p08_topn_gsea[["GO_ko_vs_het_up"]][[3]]
 p08_topn_gsea[["GO_ko_vs_het_up"]][[4]]
 p08_topn_gsea[["GO_ko_vs_het_up"]][[5]]
-
-pp(file = "03theresa_comparison_images/gsea_p08_retina_het_vs_wt_top_hit.pdf")
-p08_topn_gsea[["GO_het_vs_wt_up"]][[1]]
-plotted <- dev.off()
 ```
 
-```{r}
-#gsea_ko <-  gsea_result_ko[["result"]] %>%
-#    select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-#    arrange(desc(recall)) %>%
+```{r, eval=FALSE}
+#gsea_ko <-  gsea_result_ko[["result"]] |>
+#    select(term_name, p_value, term_size, intersection_size, recall, source, intersection) |>
+#    arrange(desc(recall)) |>
 #    head(n = 10)
 #  gsea_plots_ko <- ggplot(gsea_ko, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
 #  geom_bar(stat = "identity")+
@@ -1240,9 +1045,9 @@ plotted <- dev.off()
 #  theme_bw()+
 #  ylab("") +
 #  xlab("GSEA Score")
-gsea_het <-  gsea_result_het[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
+gsea_het <-  gsea_result_het[["result"]] |>
+  dplyr::select(term_name, p_value, term_size, intersection_size, recall, source, intersection) |>
+  arrange(desc(recall)) |>
   head(n = 10)
 gsea_plots_het <- ggplot(gsea_het, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
   geom_bar(stat = "identity") +
@@ -1250,27 +1055,10 @@ gsea_plots_het <- ggplot(gsea_het, aes(x = recall, y = reorder(term_name, recall
   theme_bw() +
   ylab("") +
   xlab("Over Representation Score")
-pp(file = "03theresa_comparison_images/GSEA_p08_axontrap_retinahet_upregulated_vs_retinako.pdf")
+pp(file = "03theresa_comparison_images_tx/GSEA_p08_axontrap_retinahet_upregulated_vs_retinako.pdf")
 gsea_plots_het
 plotted <- dev.off()
 gsea_plots_het
-```
-
-```{r, eval=FALSE}
-gsea_all <-  gsea_result_alldysregulated[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 10)
-gsea_plots_all <- ggplot(gsea_all, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("Over Representation Score")
-
-pp(file = "images/GSEA_p08_retina_axontrap_alldysregulatedgenes.pdf")
-gsea_plots_all
-plotted <- dev.off()
 ```
 
 # SCN Het vs KO
@@ -1290,26 +1078,13 @@ I am going to skip this PCA plot for a couple of reasons: I already
 did a superset of it, and the subset Theresa performed is not valid
 given the set of samples included in my sample sheet, and figuring out
 the actually corresponding subset will take me forever...  In
-addition, I want to use my mm38_hisat_v3 for everything...
+addition, I want to use my mm38_hisat_tx for everything...
 
-```{r, eval=FALSE}
-mm38_subset <- subset_se(
-  mm38_hisat,
-  subset = "(batch == '4' | batch == '5' | batch == '6') & time == 'p08' & location == 'scn' | sampleid == 'iprgc_03'")
-mm38_norm <- normalize(mm38_subset, filter = TRUE, convert = "cpm",
-                            transform = "log2", batch = "svaseq")
-mm38_norm <- set_batches(mm38_norm, fact = "location")
-mm38_norm <- set_conditions(mm38_norm, fact = "genotype")
-pca_norm <- plot_pca(mm38_norm, max_overlaps = 70)
-pca_norm$plot
-```
-
-Instead I will simplify the subset and see what happens...
 
 ```{r}
-scn_samples <- subset_se(mm38_hisat_v3,
-                           subset = "location_atb == 'scn'") %>%
-  set_batches(fact = "location_atb") %>%
+scn_samples <- subset_se(mm38_hisat_tx,
+                           subset = "location_atb == 'scn'") |>
+  set_batches(fact = "location_atb") |>
   set_conditions(fact = "genotype_atb", colors = color_choices[["genotype"]])
 scn_norm <- normalize(scn_samples, filter = TRUE, convert = "cpm",
                            transform = "log2", batch = "svaseq")
@@ -1326,28 +1101,11 @@ libsize.
 v2 is pre-deduplication and v3 is post.
 
 ```{r}
-plot_libsize(mm38_hisat_v2)
-post_filter_nonzero <- plot_libsize(mm38_hisat_v3, text = FALSE)
-pp(file = "01diagnostic_images/post_all_filteres_nonzero.pdf")
+post_filter_nonzero <- plot_quantreads(mm38_hisat_tx, text = FALSE)
+pp(file = "01diagnostic_images_tx/post_all_filteres_nonzero.pdf")
 post_filter_nonzero[["plot"]]
 plotted <- dev.off()
 post_filter_nonzero
-```
-
-I am a bit concerned about some of these library sizes
-post-deduplication.
-
-Let us look at the relationship between reads and duplication, which I
-assume will be relatively linear.
-
-```{r}
-test <- colData(mm38_hisat_v3)[, c("hisat_genome_single_all", "umi_dedup_pct_reads")]
-test_plot <- plot_linear_scatter(test, loess = TRUE)
-test_plot[["scatter"]]
-test_plot[["scatter"]]
-pp(file = "01diagnostic_images/deduplication_vs_hisat_scatter.pdf")
-test_plot[["scatter"]]
-dev.off()
 ```
 
 Theresa also produced a density/sample plot, that might prove quite
@@ -1355,7 +1113,7 @@ useful for these due to their significantly larger variance across
 samples (due to deduplication).
 
 ```{r}
-pp(file = "01diagnostic_images/sample_density.pdf")
+pp(file = "01diagnostic_images_tx/sample_density.pdf")
 mm38_density <- plot_density(loc_geno_nt)
 mm38_density[["plot"]] +
   theme(legend.position = "none")
@@ -1364,7 +1122,7 @@ dev.off()
 mm38_density[["plot"]] +
   theme(legend.position = "none")
 box <- plot_boxplot(loc_geno_nt)
-pp(file = "01diagnostic_images/sample_boxplot.pdf")
+pp(file = "01diagnostic_images_tx/sample_boxplot.pdf")
 box
 dev.off()
 box
@@ -1382,532 +1140,6 @@ location comparisons.  This seems quite reasonable to me, but I would
 prefer to not separate all the data, so I will attempt to duplicate
 and slightly streamline this logic on the full dataset.  Thus I am
 going to skip down to the end and attempt to implement this.
-
-## DE
-
-Note: The following few blocks are all copy/pasted directly from
-Theresa's notebook and are not evaluated because they are performed
-almost identically later but with slightly different logic/orders.
-
-```{r, eval=FALSE}
-mm_de_normal_p8_scn <- all_pairwise(mm38_subset, model_batch = "svaseq",
-                                    parallel = FALSE, do_ebseq = FALSE, do_basic = FALSE,
-                                    do_dream = FALSE, do_noiseq = FALSE, do_edger = FALSE,
-                                    filter = TRUE)
-annots_to_merge <- mm_annot %>%
-  select(ensembl_gene_id, external_synonym) %>%
-  filter(ensembl_gene_id %in% rownames(mm_de_normal_p8_scn$deseq$all_tables$ko_scn_vs_het_scn)) %>%
-  distinct()
-mm_de_normal_p8_scn$deseq$all_tables$ko_scn_vs_het_scn <- merge(
-  mm_de_normal_p8_scn$deseq$all_tables$ko_scn_vs_het_scn,
-  annots_to_merge, by.x = 0, by.y = "ensembl_gene_id", all.x = TRUE)
-```
-
-```{r, eval=FALSE}
-hetkeeper_genes <- mm_de_normal_p8_scn$deseq$all_tables$wt_scn_vs_het_scn %>%
-  filter(logFC <= -0.1 & adj.P.Val <= 0.05)
-kokeeper_genes <- mm_de_normal_p8_scn$deseq$all_tables$wt_scn_vs_ko_scn %>%
-  filter(logFC <= -0.1 & adj.P.Val <= 0.05)
-keepergenes <- unique(c(rownames(hetkeeper_genes), rownames(kokeeper_genes)))
-df <- mm_de_normal_p8_scn$deseq$all_tables$koscn_vs_hetscn %>%
-  dplyr::mutate(logFC = -logFC) %>%
-  set_sig_limma(factors = c("Het Enriched",
-                            "KO Enriched"))
-df <- df %>%
-  filter(Row.names %in% keepergenes)
-labels_ups <- df %>%
-  filter(abs(logFC) > 1) %>%
-  arrange(logFC) %>%
-  head(n = 1)
-labels_downs <- df %>%
-  filter(abs(logFC) > 1) %>%
-  arrange(-logFC) %>%
-  head(n = 1)
-labels <- rbind(labels_ups, labels_downs)
-res_tbl <- df
-DEplot <- ggplot(res_tbl, aes(x = logFC, y = -log10(adj.P.Val), label = external_synonym)) +
-  geom_point(aes(colour = Significance), size = 4) +
-  geom_vline(xintercept = c(-1, 1)) +
-  geom_hline(yintercept = -log10(0.05)) +
-  theme_classic(base_size = 20) +
-  xlab("log2(FC)") +
-  ylab("-log10(p-value)") +
-  ## ggtitle(title, subtitle = subtitle) +
-  theme(legend.position="right") +
-  scale_color_manual(values=c("Het Enriched" = "#F8766D",
-                              "KO Enriched" = "#00BFC4",
-                              "Not\n Enriched" = "Grey")) +
-  geom_label_repel(data=filter(df,
-                               ## c('s5_het_dlgn', 's5_het_ret', 's5_het_scn')),
-                               external_synonym %in% labels$external_synonym),
-                   ## nudge_x = -0.5,
-                   nudge_y = 3, max.overlaps = 15) +
-  ggtitle("SCN Het vs KO Translatome")
-
-pp(file = "images/p08_scn_DE_1312024.pdf")
-DEplot
-plotted <- dev.off()
-
-write_xlsx(df, excel = "excel/scnhet_vs_scnko_WTfiltered.xlsx")
-```
-
-## How many ups/downs
-
-```{r, eval=FALSE}
-ko_enriched <- df %>%
-  filter(Significance == "KO Enriched")
-
-het_enriched <- df %>%
-  filter(Significance == "Het Enriched")
-```
-
-## GSEA
-
-```{r, eval=FALSE}
-ko_genes <- res_tbl %>%
-  filter(adj.P.Val <= 0.05) %>%
-  arrange(-abs(logFC)) %>%
-  select(Row.names, logFC, adj.P.Val, external_synonym, Significance) %>%
-  filter(logFC <= -1)
-
-het_genes <- res_tbl %>%
-  filter(adj.P.Val <= 0.05) %>%
-  arrange(-abs(logFC)) %>%
-  select(Row.names, logFC, adj.P.Val, external_synonym, Significance) %>%
-  filter(logFC >= 1)
-
-alldysregulated_genes <- res_tbl %>%
-  filter(adj.P.Val <= 0.05) %>%
-  arrange(logFC) %>%
-  select(Row.names, logFC, adj.P.Val, external_synonym, Significance) %>%
-  filter(abs(logFC) >= 1)
-
-gsea_result_ko <- gost(query = ko_genes$external_synonym,
-                       organism = "mmusculus",
-                       evcodes = TRUE,
-                       ordered_query = TRUE)
-
-gsea_result_het <- gost(query = het_genes$external_synonym,
-                        organism = "mmusculus",
-                        evcodes = TRUE,
-                        ordered_query = TRUE)
-
-gsea_result_alldysregulated <- gost(query = alldysregulated_genes$external_synonym,
-                                    organism = "mmusculus",
-                                    evcodes = TRUE,
-                                    ordered_query = TRUE)
-```
-
-```{r, eval=FALSE}
-gsea_ko <-  gsea_result_ko[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 10)
-gsea_plots_ko <- ggplot(gsea_ko, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("Over enrichment Score")
-
-gsea_het <-  gsea_result_het[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 10)
-gsea_plots_het <- ggplot(gsea_het, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("Over enrichment Score")
-
-gsea_all <-  gsea_result_alldysregulated[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 10)
-gsea_plots_all <- ggplot(gsea_all, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("Over enrichment Score")
-
-pp(file = "images/GSEA_p08_retina_axontrap_alldysregulatedgenes.pdf")
-gsea_plots_all
-plotted <- dev.off()
-```
-
-# Het Retina vs Het SCN
-
-```{r, eval=FALSE}
-mm38_subset2 <- subset_se(
-  mm38_hisat,
-  subset = "(batch == '4' | batch == '5' | batch == '6') & time == 'p08' & genotype != 'ko' & location != 'dlgn' | sampleid == 'iprgc_03'")
-
-mm38_subset2 <- subset_se(mm38_subset2, subset = "sampleid != 'iprgc_89'")
-mm38_subset2$design %>%
-  select(genotype, location) %>%
-  table()
-mm38_norm2 <- normalize(mm38_subset2, filter=TRUE,
-                             convert="cpm",
-                             transform="log2", batch = "svaseq")
-```
-
-## PCA
-
-```{r, eval=FALSE}
-mm38_norm2 <- set_batches(mm38_norm2, fact = "location")
-mm38_norm2 <- set_conditions(mm38_norm2, fact = "genotype")
-pca_norm2 <- plot_pca(mm38_norm2, max_overlaps = 70)
-pca_norm2$plot
-```
-
-## DE
-
-```{r, eval=FALSE}
-mm_de_subset2 <- all_pairwise(mm38_subset2,
-                              model_batch="svaseq",
-                              parallel=FALSE, do_ebseq=FALSE,
-                              do_basic = FALSE, do_dream = FALSE,
-                              do_noiseq = FALSE, do_edger = FALSE,
-                              filter = TRUE)
-```
-
-```{r, eval=FALSE}
-retinakeeper_genes <- mm_de_subset2$deseq$all_tables$wt_retina_vs_het_retina %>%
-  filter(logFC <= -0.1 & adj.P.Val <= 0.05)
-
-scnkeeper_genes <- mm_de_subset2$deseq$all_tables$wt_scn_vs_het_scn %>%
-  filter(logFC <= -0.1 & adj.P.Val <= 0.05)
-
-keepergenes <- unique(c(rownames(retinakeeper_genes), rownames(scnkeeper_genes)))
-
-annots_to_merge <- mm_annot %>%
-  select(ensembl_gene_id, external_synonym) %>%
-  filter(ensembl_gene_id %in% rownames(mm_de_subset2$deseq$all_tables$het_scn_vs_het_retina)) %>%
-  distinct()
-
-mm_de_subset2$deseq$all_tables$het_scn_vs_het_retina <- merge(
-  mm_de_subset2$deseq$all_tables$het_scn_vs_het_retina,
-  annots_to_merge, by.x = 0,
-  by.y = "ensembl_gene_id", all.x = TRUE)
-
-df <- mm_de_subset2$deseq$all_tables$het_scn_vs_het_retina %>%
-  mutate(Significance = case_when(logFC <= -1.0 ~ "Retina Enriched",
-                                  logFC >= 1.0 ~ "SCN Enriched",
-                                  logFC > -1.0 & logFC < 1.0 ~ "Not\n Enriched"))
-
-df <- df %>%
-  filter(Row.names %in% keepergenes)
-
-scn_enriched <- df %>%
-  filter(adj.P.Val <= 0.05 & logFC >= 1.0) %>%
-  arrange(-logFC) %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val) %>%
-  mutate(Significance = "SCN Enriched") %>%
-  filter(Row.names %in% rownames(scnkeeper_genes))
-
-retina_enriched <- df %>%
-  filter(adj.P.Val <= 0.05 & logFC <= -1.0) %>%
-  arrange(logFC)  %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val) %>%
-  mutate(Significance = "Retina Enriched") %>%
-  filter(Row.names %in% rownames(retinakeeper_genes))
-
-notenriched <- df %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val, Significance) %>%
-  filter(Row.names %in% c(rownames(retinakeeper_genes),
-                          rownames(scnkeeper_genes))[duplicated(c(rownames(retinakeeper_genes),
-                                                                  rownames(scnkeeper_genes)))]) %>%
-  filter(Significance == "Not\n Enriched")
-
-df <- rbind(scn_enriched, retina_enriched, notenriched)
-df <- df %>%
-  distinct()
-
-## writexl::write_xlsx(df, path = "axonTRAP_DE_results_20240202/retinahet_vs_scn_het_WTfiltered.xlsx")
-```
-
-```{r, eval=FALSE}
-labels_ups <- df %>%
-  filter(adj.P.Val <= 0.05 & abs(logFC) > 1.0) %>%
-  arrange(logFC) %>%
-  head(n = 10)
-
-labels_downs <- df %>%
-  filter(adj.P.Val <= 0.05 & abs(logFC) > 1.0) %>%
-  arrange(-logFC) %>%
-  head(n = 10)
-
-labels <- rbind(labels_ups, labels_downs)
-
-labels_requested <- c("Cdh10","Cdh12","Cdh13","Cdh18",
-                      "Cdh7","Cdh8","Cdh9","Cntn3",
-                      "Cntn4","Cntn5","Cntn6","Kirrel3",
-                      "Nrxn1","Nrxn3","Sema3c","Sema6d",
-                      "Tenm1","Tenm2","Tenm4")
-res_tbl <- df
-DEplot <- ggplot(res_tbl, aes(x = logFC, y = -log10(adj.P.Val), label = external_synonym)) +
-  geom_point(aes(colour = Significance), size = 4) +
-  geom_vline(xintercept = c(-1, 1)) +
-  geom_hline(yintercept = -log10(0.05)) +
-  theme_classic(base_size = 20) +
-  xlab("log2(FC)") +
-  ylab("-log10(p-value)") +
-  ## ggtitle(title, subtitle = subtitle) +
-  theme(legend.position="right") +
-  scale_color_manual(values=c("Grey", "#F8766D", "#00BFC4")) +
-  geom_label_repel(data=filter(df,
-                               external_synonym %in% labels_requested),
-                   ## c(labels$external_synonym, "Opn4")), #c('s5_het_dlgn', 's5_het_ret', 's5_het_scn')),
-                   ## nudge_x = -0.5,
-                   nudge_y = 15, max.overlaps = 25)
-
-#pp(file = "axonTRAP_Volcanoplots_20240202/p08_retinavsscnhet_DE_requested_genelabels_02052024.pdf")
-DEplot
-#dev.off()
-```
-
-## How many ups/downs
-
-```{r, eval=FALSE}
-scn_enriched <- df %>%
-  filter(adj.P.Val <= 0.05 & logFC >= 1.0) %>%
-  arrange(-logFC) %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val, Significance)
-
-retina_enriched <- df %>%
-  filter(adj.P.Val <= 0.05 & logFC <= -1.0) %>%
-  arrange(logFC)  %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val, Significance)
-
-scn_enriched
-retina_enriched
-
-df %>%
-  filter(Significance == "Not\n Enriched")
-```
-
-## GSEA
-
-```{r, eval=FALSE}
-gsea_result_scn <- gost(query = scn_enriched$external_synonym,
-                        organism = "mmusculus", evcodes = TRUE,
-                        ordered_query = TRUE, source = c("GO"))
-
-gsea_result_ret <- gost(query = retina_enriched$external_synonym,
-                        organism = "mmusculus", evcodes = TRUE,
-                        ordered_query = TRUE, source = c("GO"))
-```
-
-```{r, eval=FALSE}
-gsea_scn <-  gsea_result_scn[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 20)
-gsea_plots_scn <- ggplot(gsea_scn, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("Over enrichment Score")
-
-pp(file = "images/GSEA_SCNhet_vs_retina_enriched_P08.pdf")
-gsea_plots_scn
-plotted <- dev.off()
-
-gsea_ret <-  gsea_result_ret[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 20)
-gsea_plots_ret <- ggplot(gsea_ret, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("Over enrichment Score")
-
-pp(file = "images/GSEA_Retinahet_vs_SCN_enriched_P08.pdf")
-gsea_plots_ret
-plotted <- dev.off()
-```
-
-# KO Retina vs KO SCN
-
-```{r, eval=FALSE}
-mm38_subset3 <- subset_se(
-  mm38_hisat,
-  subset = "(batch == '4' | batch == '5' | batch == '6') & time == 'p08'  & genotype != 'het' & location != 'dlgn' | sampleid == 'iprgc_03'")
-
-mm38_subset3 <- subset_se(mm38_subset3, subset = "sampleid != 'iprgc_86'")
-mm38_subset3$design %>%
-  select(genotype, location) %>%
-  table()
-mm38_norm3 <- normalize(mm38_subset3, filter=TRUE,
-                             convert="cpm", transform="log2", batch = "svaseq")
-```
-
-## PCA
-
-```{r, eval=FALSE}
-mm38_norm3 <- set_batches(mm38_norm3, fact = "location")
-mm38_norm3 <- set_conditions(mm38_norm3, fact = "genotype")
-pca_norm3 <- plot_pca(mm38_norm3, max_overlaps = 70)
-pca_norm3$plot
-```
-
-## DE
-
-```{r, eval=FALSE}
-mm_de_subset3 <- all_pairwise(mm38_subset3,
-                              model_batch="svaseq",
-                              parallel=FALSE, do_ebseq=FALSE,
-                              do_basic = FALSE, do_dream = FALSE,
-                              do_noiseq = FALSE, do_edger = FALSE,
-                              filter = TRUE)
-
-retinakeeper_genes <- mm_de_subset3$deseq$all_tables$wtretina_vs_koretina %>%
-  filter(logFC <= -1.0 & adj.P.Val <= 0.05)
-
-scnkeeper_genes <- mm_de_subset3$deseq$all_tables$wtscn_vs_koscn %>%
-  filter(logFC <= -1.0 & adj.P.Val <= 0.05)
-
-keepergenes <- unique(c(rownames(retinakeeper_genes), rownames(scnkeeper_genes)))
-
-annots_to_merge <- mm_annot %>%
-  select(ensembl_gene_id, external_synonym) %>%
-  filter(ensembl_gene_id %in% rownames(mm_de_subset3$deseq$all_tables$ko_scn_vs_ko_retina)) %>%
-  distinct()
-
-mm_de_subset3$deseq$all_tables$ko_scn_vs_ko_retina <- merge(
-  mm_de_subset3$deseq$all_tables$ko_scn_vs_ko_retina,
-  annots_to_merge, by.x = 0,
-  by.y = "ensembl_gene_id", all.x = TRUE)
-
-df <- mm_de_subset3$deseq$all_tables$ko_scn_vs_ko_retina %>%
-  mutate(Significance = case_when(logFC <= -1 ~ "Retina Enriched",
-                                  logFC >= 1 ~ "SCN Enriched",
-                                  logFC > -1 & logFC < 1 ~ "Not\n Enriched"))
-
-df <- df %>%
-  filter(Row.names %in% keepergenes)
-
-scn_enriched <- df %>%
-  filter(adj.P.Val <= 0.05 & logFC >= 1) %>%
-  arrange(-logFC) %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val) %>%
-  mutate(Significance = "SCN Enriched") %>%
-  filter(Row.names %in% rownames(scnkeeper_genes))
-
-df %>%
-  filter(adj.P.Val <= 0.05 & logFC <= -1) %>%
-  arrange(logFC)  %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val) %>%
-  mutate(Significance = "Retina Enriched") %>%
-  filter(Row.names %in% rownames(retinakeeper_genes)) -> retina_enriched
-
-notenriched <- df %>%
-  select(Row.names, external_synonym, logFC, adj.P.Val, Significance) %>%
-  filter(Row.names %in% c(rownames(retinakeeper_genes),
-                          rownames(scnkeeper_genes))[duplicated(c(rownames(retinakeeper_genes),
-                                                                  rownames(scnkeeper_genes)))])
-
-df <- rbind(scn_enriched, retina_enriched, notenriched)
-```
-
-```{r, eval=FALSE}
-labels_ups <- df %>%
-  filter(adj.P.Val <= 0.05 & abs(logFC) > 1) %>%
-  arrange(logFC) %>%
-  head(n = 10)
-
-labels_downs <- df %>%
-  filter(adj.P.Val <= 0.05 & abs(logFC) > 1) %>%
-  arrange(-logFC) %>%
-  head(n = 10)
-
-labels <- rbind(labels_ups, labels_downs)
-## wanted_column <- "Significance"
-
-res_tbl <- df
-DEplot <- ggplot(res_tbl, aes(x = logFC, y = -log10(adj.P.Val), label = external_synonym)) +
-  geom_point(aes(colour = Significance), size = 4) +
-  ## geom_point(aes(colour = !!sym(wanted_column)), size = 4) +
-  geom_vline(xintercept = c(-1, 1)) +
-  geom_hline(yintercept = -log10(0.05)) +
-  theme_classic(base_size = 20) +
-  xlab("log2(FC)") +
-  ylab("-log10(p-value)") +
-  ## ggtitle(title, subtitle = subtitle) +
-  theme(legend.position = "right") +
-  scale_color_manual(values = c("Grey", "#F8766D", "#00BFC4")) +
-  geom_label_repel(data = filter(
-    df, external_synonym %in% c(labels$external_synonym, "Opn4")),
-    ## c('s5_het_dlgn', 's5_het_ret', 's5_het_scn')),
-    ## nudge_x = -0.5,
-    nudge_y = 10, max.overlaps = 25)
-
-pp(file = "images/p08_retinavsscnko_DE_1312024.pdf")
-DEplot
-plotted <- dev.off()
-```
-
-## How many ups/downs
-
-```{r, eval=FALSE}
-scn_enriched
-retina_enriched
-notenriched %>%
-  filter(Significance == "Not\n Enriched")
-```
-
-## GSEA
-
-```{r, eval=FALSE}
-gsea_result_scn <- gost(query = scn_enriched$external_synonym,
-                        organism = "mmusculus",
-                        evcodes = TRUE,
-                        ordered_query = TRUE,
-                        source = c("GO"))
-
-gsea_result_ret <- gost(query = retina_enriched$external_synonym,
-                        organism = "mmusculus",
-                        evcodes = TRUE,
-                        ordered_query = TRUE,
-                        source = c("GO"))
-```
-
-```{r, eval=FALSE}
-gsea_scn <-  gsea_result_scn[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 20)
-gsea_plots_scn <- ggplot(gsea_scn, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("GSEA Score")
-
-pp(file = "images/GSEA_SCNko_enriched_vs_retina_P08.pdf")
-gsea_plots_scn
-plotted <- dev.off()
-
-gsea_ret <-  gsea_result_ret[["result"]] %>%
-  select(term_name, p_value, term_size, intersection_size, recall, source, intersection) %>%
-  arrange(desc(recall)) %>%
-  head(n = 20)
-gsea_plots_ret <- ggplot(gsea_ret, aes(x = recall, y = reorder(term_name, recall), fill = p_value)) +
-  geom_bar(stat = "identity") +
-  scale_fill_continuous(low = "blue", high = "red") +
-  theme_bw() +
-  ylab("") +
-  xlab("GSEA Score")
-
-pp(file = "images/GSEA_Retinako_enriched_vs_SCN_P08.pdf")
-gsea_plots_ret
-plotted <- dev.off()
-```
 
 # My version of the global analysis
 
@@ -1956,14 +1188,14 @@ In addition, the exclusion dataset is the same as the analysis
 dataset, it is really only the contrasts which will be different.
 
 ```{r}
-v3_pairwise_input <- set_conditions(mm38_hisat_v3, fact = "time_geno_loc",
+tx_pairwise_input <- set_conditions(mm38_hisat_tx, fact = "time_geno_loc",
                                     colors = color_choices[["all"]])
 ```
 
 ## A heatmap of specific genes across all conditions
 
 ```{r}
-all_cond_gene_heatmap_start <- normalize(v3_pairwise_input, filter = "simple",
+all_cond_gene_heatmap_start <- normalize(tx_pairwise_input, filter = "simple",
                                          length_column = "cds_length",
                                          convert = "rpkm", transform = "log2")
 all_cond_gene_heatmap_input <- median_by_factor(all_cond_gene_heatmap_start)
@@ -1974,9 +1206,9 @@ all_cond_mtrx[na_idx] <- 0
 variances <- matrixStats::rowVars(as.matrix(all_cond_mtrx))
 variant_genes <- variances > 6.2
 input_mtrx <- all_cond_mtrx[variant_genes, ]
-cond_colors <- get_colors_by_condition(v3_pairwise_input, levels = color_order)
+cond_colors <- get_colors_by_condition(tx_pairwise_input, levels = color_order)
 dim(input_mtrx)
-pp(file = "04inclusion_comparisons/top_104_variant_rpkm_genes_heatmap.pdf")
+pp(file = "04inclusion_comparisons_tx/top_104_variant_rpkm_genes_heatmap.pdf")
 gplots::heatmap.2(as.matrix(input_mtrx), scale = "none", trace = "none",
                   ColSideColors = cond_colors)
 dev.off()
@@ -2008,66 +1240,6 @@ of contrasts which will be used to define the gene set to exclude.
 Put slightly differently, for every term of interest I will create a
 contrast with the wt as numerator and the desired term as denominator,
 then pull out the genes increased in wt.
-
-### Potential text describing filtering
-
-This dataset includes wild-type mice for each condition; this provided
-an opportunity to filter out the most likely false positive
-genes/transcripts.  When the samples were processed and the tagged
-large ribosomal subunits were pulled down, it was assumed that at
-least some other transcripts were likely to bind to the column and
-therefore end up in the sequencing libraries.  If one assumes that
-this distribution is consistent over time, genotype, and location;
-then a likely strategy would be to take the mean value of all observed
-wild-type samples and exclude any genes/transcripts for which the
-heterozygous and/or knockout samples have lower observed abundance
-than this mean.  We therefore performed the comparisons of the
-wild-type samples by time and location and observed significant
-variance; thus we chose instead to exclude genes/transcripts which are
-lower in the heterzygous and knock-out samples than any of the comitant
-wild-type conditions.  As an example, if the desired contrast is to
-compare heterzygous retina / knockout retina at p08; then the set of
-observed abundances was first compared against the p08 wt retina
-samples and filtered to include only those which were deemed higher
-when comparing the (p08 heterozygous retina / p08 wild-type retina)
-and (p08 knockout retina / p08 wild-type retina) via DESeq2, with a
-less stringent definition of significant (adjusted p-value <= 0.1 and
-logFC >= 0.1).  Two versions of this filter were applied, one which
-required either the numerator or denominator to be higher than the
-corresponding wild-type samples; and one which required both to be
-higher than the wild-type samples.  The mean normalized expression
-values were reported with each of these comparisons so that one may
-perform other filters as desired.
-
-I will put this slightly differently, copy-pasting the observed set of
-genes increased in the non-wt condition to show the result:
-
-LFC cutoff: 0.1 adj P cutoff: 0.1
-               deseq_up
-p15_het_dlgn       2067
-p08_het_dlgn        180
-p15_ko_dlgn        2544
-p08_ko_dlgn         397
-p15_het_retina      402
-p08_het_retina      976
-p15_ko_retina       347
-p08_ko_retina      1551
-p15_het_scn          15
-p08_het_scn         225
-p15_ko_scn            8
-p08_ko_scn          112
-
-When comparing against the dLGN wild-types, there are between 180 and
-2,544 genes which pass the filter.  The retina filter passes between
-347 and 1,551 genes.  The SCN filter passes far fewer genes, ranging
-from 8 to 225.
-
-If we filter based on the intersection of genes which pass these, then
-any contrast which includes SCN samples will have ~ 0 genes of
-interest by definition.  Thus, we chose to allow genes which pass the
-union of either the numerator or denominator filter.  In this instance,
-we retain a significant number of genes as long as we are not
-restricted to only SCN samples.
 
 ```{r}
 inclusions <- list(
@@ -2165,19 +1337,19 @@ Note: This problem was fixed by removing some parallelization.
 
 ```{r}
 inclusion_de <- all_pairwise(
-  v3_pairwise_input, filter = "simple", model_fstring = default_fstring,
+  tx_pairwise_input, filter = "simple", model_fstring = default_fstring,
   keepers = inclusions, model_svs = "svaseq")
 inclusion_de
 
 inclusion_tables <- combine_de_tables(
-  inclusion_de, keepers = inclusions, label_column = label_column,
-  excel = glue("04inclusion_comparisons/inclusion_tables-v{ver}.xlsx"))
+  inclusion_de, keepers = inclusions, label_column = tx_label_column,
+  excel = glue("04inclusion_comparisons_tx/inclusion_tables-v{ver}.xlsx"))
 inclusion_tables
 ## 202603: I successfully recapitulated previous non-container result.
 
 inclusion_sig <- extract_significant_genes(
   inclusion_tables, lfc = filter_lfc_cutoff, p = filter_adjp_cutoff, according_to = "deseq",
-  excel = glue("04inclusion_comparisons/inclusion_sig-v{ver}.xlsx"))
+  excel = glue("04inclusion_comparisons_tx/inclusion_sig-v{ver}.xlsx"))
 inclusion_sig
 ```
 
@@ -2202,7 +1374,7 @@ numbers look like.
 
 ```{r}
 test_inclusion <- extract_significant_genes(
-  inclusion_tables, according_to = "deseq", excel = "excel/default_inclusion_sig.xlsx")
+  inclusion_tables, according_to = "deseq", excel = "04inclusion_comparisons_tx/default_inclusion_sig.xlsx")
 test_inclusion
 ```
 
@@ -2213,7 +1385,7 @@ consistent across analyses and parameters provided.
 
 ```{r}
 dim(inclusion_sig$deseq$ups$p15_het_dlgn)
-test_all_up <- inclusion_tables$data$p15_het_dlgn[["deseq_logfc"]] > 0.1 &
+test_all_up <- inclusion_tables$data$p15_het_dlgn[["deseq_logfc"]] >= 0.1 &
   inclusion_tables$data$p15_het_dlgn[["deseq_adjp"]] <= 0.1
 summary(test_all_up)
 ```
@@ -2239,10 +1411,10 @@ denom <- "p15_wt_dlgn"
 hw_p15_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
 
-pp(file = "05inclusion_volcano_ma/hw_p15_dlgn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p15_dlgn_volcano.pdf", width = 9, height = 9)
 hw_p15_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 hw_p15_dlgn_volcano[["plot"]]
@@ -2250,10 +1422,10 @@ hw_p15_dlgn_volcano[["plot"]]
 hw_p15_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
 
-pp(file = "05inclusion_volcano_ma/hw_p15_dlgn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p15_dlgn_ma.pdf", width = 9, height = 9)
 hw_p15_dlgn_ma[["plot"]]
 plotted <- dev.off()
 hw_p15_dlgn_ma[["plot"]]
@@ -2269,18 +1441,18 @@ denom <- "p08_wt_dlgn"
 hw_p08_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/hw_p08_dlgn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p08_dlgn_volcano.pdf", width = 9, height = 9)
 hw_p08_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 hw_p08_dlgn_volcano[["plot"]]
 hw_p08_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/hw_p08_dlgn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p08_dlgn_ma.pdf", width = 9, height = 9)
 hw_p08_dlgn_ma[["plot"]]
 plotted <- dev.off()
 hw_p08_dlgn_ma[["plot"]]
@@ -2296,18 +1468,18 @@ denom <- "p15_wt_dlgn"
 kw_p15_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/kw_p15_dlgn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p15_dlgn_volcano.pdf", width = 9, height = 9)
 kw_p15_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 kw_p15_dlgn_volcano[["plot"]]
 kw_p15_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/kw_p15_dlgn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p15_dlgn_ma.pdf", width = 9, height = 9)
 kw_p15_dlgn_ma[["plot"]]
 plotted <- dev.off()
 kw_p15_dlgn_ma[["plot"]]
@@ -2323,18 +1495,18 @@ denom <- "p08_wt_dlgn"
 kw_p08_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/kw_p08_dlgn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p08_dlgn_volcano.pdf", width = 9, height = 9)
 kw_p08_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 kw_p08_dlgn_volcano[["plot"]]
 kw_p08_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/kw_p08_dlgn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p08_dlgn_ma.pdf", width = 9, height = 9)
 kw_p08_dlgn_ma[["plot"]]
 plotted <- dev.off()
 kw_p08_dlgn_ma[["plot"]]
@@ -2350,18 +1522,18 @@ denom <- "p15_wt_retina"
 hw_p15_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/hw_p15_retina_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p15_retina_volcano.pdf", width = 9, height = 9)
 hw_p15_retina_volcano[["plot"]]
 plotted <- dev.off()
 hw_p15_retina_volcano[["plot"]]
 hw_p15_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/hw_p15_retina_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p15_retina_ma.pdf", width = 9, height = 9)
 hw_p15_retina_ma[["plot"]]
 plotted <- dev.off()
 hw_p15_retina_ma[["plot"]]
@@ -2377,18 +1549,18 @@ denom <- "p08_wt_retina"
 hw_p08_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/hw_p08_retina_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p08_retina_volcano.pdf", width = 9, height = 9)
 hw_p08_retina_volcano[["plot"]]
 plotted <- dev.off()
 hw_p08_retina_volcano[["plot"]]
 hw_p08_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/hw_p08_retina_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p08_retina_ma.pdf", width = 9, height = 9)
 hw_p08_retina_ma[["plot"]]
 plotted <- dev.off()
 hw_p08_retina_ma[["plot"]]
@@ -2404,18 +1576,18 @@ denom <- "p15_wt_retina"
 kw_p15_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/kw_p15_retina_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p15_retina_volcano.pdf", width = 9, height = 9)
 kw_p15_retina_volcano[["plot"]]
 plotted <- dev.off()
 kw_p15_retina_volcano[["plot"]]
 kw_p15_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/kw_p15_retina_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p15_retina_ma.pdf", width = 9, height = 9)
 kw_p15_retina_ma[["plot"]]
 plotted <- dev.off()
 kw_p15_retina_ma[["plot"]]
@@ -2431,18 +1603,18 @@ denom <- "p08_wt_retina"
 kw_p08_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/kw_p08_retina_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p08_retina_volcano.pdf", width = 9, height = 9)
 kw_p08_retina_volcano[["plot"]]
 plotted <- dev.off()
 kw_p08_retina_volcano[["plot"]]
 kw_p08_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma_p08_retina_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p08_retina_ma.pdf", width = 9, height = 9)
 kw_p08_retina_ma[["plot"]]
 plotted <- dev.off()
 kw_p08_retina_ma[["plot"]]
@@ -2458,18 +1630,18 @@ denom <- "p15_wt_scn"
 hw_p15_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/hw_p15_scn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p15_scn_volcano.pdf", width = 9, height = 9)
 hw_p15_scn_volcano[["plot"]]
 plotted <- dev.off()
 hw_p15_scn_volcano[["plot"]]
 hw_p15_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/hw_p15_scn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p15_scn_ma.pdf", width = 9, height = 9)
 hw_p15_scn_ma[["plot"]]
 plotted <- dev.off()
 hw_p15_scn_ma[["plot"]]
@@ -2485,18 +1657,18 @@ denom <- "p08_wt_scn"
 hw_p08_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/hw_p08_scn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p08_scn_volcano.pdf", width = 9, height = 9)
 hw_p08_scn_volcano[["plot"]]
 plotted <- dev.off()
 hw_p08_scn_volcano[["plot"]]
 hw_p08_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/hw_p08_scn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/hw_p08_scn_ma.pdf", width = 9, height = 9)
 hw_p08_scn_ma[["plot"]]
 plotted <- dev.off()
 hw_p08_scn_ma[["plot"]]
@@ -2512,18 +1684,18 @@ denom <- "p15_wt_scn"
 kw_p15_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/kw_p15_scn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p15_scn_volcano.pdf", width = 9, height = 9)
 kw_p15_scn_volcano[["plot"]]
 plotted <- dev.off()
 kw_p15_scn_volcano[["plot"]]
 kw_p15_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/kw_p15_scn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p15_scn_ma.pdf", width = 9, height = 9)
 kw_p15_scn_ma[["plot"]]
 plotted <- dev.off()
 kw_p15_scn_ma[["plot"]]
@@ -2539,18 +1711,18 @@ denom <- "p08_wt_scn"
 kw_p08_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = allc[[denom]], color_high = allc[[num]],
-  label_column = "mgi_symbol", label = 10, alpha = 1.0,
+  label_column = "external_transcript_name", label = 10, alpha = 1.0,
   size = 4)
-pp(file = "05inclusion_volcano_ma/kw_p08_scn_volcano.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p08_scn_volcano.pdf", width = 9, height = 9)
 kw_p08_scn_volcano[["plot"]]
 plotted <- dev.off()
 kw_p08_scn_volcano[["plot"]]
 kw_p08_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = allc[[denom]], color_high = allc[[num]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = 10)
-pp(file = "05inclusion_volcano_ma/kw_p08_scn_ma.pdf", width = 9, height = 9)
+pp(file = "05inclusion_volcano_ma_tx/kw_p08_scn_ma.pdf", width = 9, height = 9)
 kw_p08_scn_ma[["plot"]]
 plotted <- dev.off()
 kw_p08_scn_ma[["plot"]]
@@ -2561,7 +1733,7 @@ See the shared/unique genes in these sets.
 ```{r}
 inclusion_upsets <- upsetr_sig(inclusion_sig)
 inclusion_intersects <- write_upset_groups(
-  inclusion_upsets, excel = "04inclusion_comparison/inclusion_gene_groups.xlsx")
+  inclusion_upsets, excel = "04inclusion_comparison_tx/inclusion_gene_groups.xlsx")
 ```
 
 ### Extract genes included for each set of contrasts
@@ -2617,7 +1789,7 @@ extract_inclusions_strict <- function(inclusion_sig, inclusion_tables, inclusion
     retlist[[df_name]] <- included_df
     written_inclusion <- write_xlsx(
       data = included_df,
-      excel = glue("07included_strict_genes_excel/{include_name}-v{ver}.xlsx"))
+      excel = glue("07included_strict_genes_excel_tx/{include_name}-v{ver}.xlsx"))
     retlist[[include_name]] <- include_genes
     retlist[[contrast]] <- include_genes
   }
@@ -2664,7 +1836,7 @@ extract_inclusions <- function(inclusion_sig, inclusion_tables, inclusions, keep
     df_name <- paste0("df_", contrast)
     retlist[[df_name]] <- included_df
     written_inclusion <- write_xlsx(data = included_df,
-                                    excel = glue("07included_genes/{include_name}-v{ver}.xlsx"))
+                                    excel = glue("07included_genes_tx/{include_name}-v{ver}.xlsx"))
     retlist[[include_name]] <- include_genes
     retlist[[contrast]] <- include_genes
   }
@@ -2677,7 +1849,7 @@ extract_inclusions <- function(inclusion_sig, inclusion_tables, inclusions, keep
 Here is the full set of gene IDs
 
 ```{r}
-all_genes <- rownames(assay(v3_pairwise_input))
+all_genes <- rownames(assay(tx_pairwise_input))
 ```
 
 In the following blocks I am including the union of genes observed
@@ -2764,7 +1936,7 @@ write_all_cp <- function(all_cp, prefix = "12", suffix = "") {
   for (g in seq_len(length(all_cp))) {
     name <- names(all_cp)[g]
     datum <- all_cp[[name]]
-    filename <- glue("{prefix}enrichment_excel/{name}_cprofiler{suffix}-v{ver}.xlsx")
+    filename <- glue("{prefix}enrichment_excel_tx/{name}_cprofiler{suffix}-v{ver}.xlsx")
     written <- sm(write_cp_data(datum, excel = filename))
     all_written[[g]] <- written
   }
@@ -2775,7 +1947,7 @@ write_all_gp <- function(all_gp, prefix = "13", suffix = "") {
   for (g in seq_len(length(all_gp))) {
     name <- names(all_gp)[g]
     datum <- all_gp[[name]]
-    filename <- glue("{prefix}enrichment_excel/{name}_gprofiler{suffix}-v{ver}.xlsx")
+    filename <- glue("{prefix}enrichment_excel_tx/{name}_gprofiler{suffix}-v{ver}.xlsx")
     written <- sm(write_gprofiler_data(datum, excel = filename))
     all_written[[g]] <- written
   }
@@ -2786,7 +1958,7 @@ write_all_en <- function(all_en, prefix = "14", suffix = "") {
   for (e in seq_len(length(all_en))) {
     name <- names(all_en)[e]
     datum <- all_en[[name]]
-    filename <- glue("{prefix}enrichment_excel/{name}_enricher{suffix}-v{ver}.xlsx")
+    filename <- glue("{prefix}enrichment_excel_tx/{name}_enricher{suffix}-v{ver}.xlsx")
     written <- sm(write_enricher_data(datum, excel = filename))
     all_written[[e]] <- written
   }
@@ -2801,7 +1973,7 @@ trust because they were too high in wt for every contrast we are
 likely to perform.
 
 ```{r}
-all_genes <- rownames(assay(v3_pairwise_input))
+all_genes <- rownames(assay(tx_pairwise_input))
 time_inclusions <- extract_inclusions(inclusion_sig, inclusion_tables, inclusions,
                                       time_keepers, all_genes)
 location_inclusions <- extract_inclusions(inclusion_sig, inclusion_tables, inclusions,
@@ -2816,7 +1988,7 @@ genotype_inclusions <- extract_inclusions(inclusion_sig, inclusion_tables, inclu
 ### Genotype
 
 ```{r}
-genotype_de <- all_pairwise(v3_pairwise_input, filter = TRUE, model_fstring = default_fstring,
+genotype_de <- all_pairwise(tx_pairwise_input, filter = TRUE, model_fstring = default_fstring,
                             keepers = genotype_keepers, model_svs = "svaseq")
 genotype_de
 ```
@@ -2824,7 +1996,7 @@ genotype_de
 ### Location
 
 ```{r}
-location_de <- all_pairwise(v3_pairwise_input, filter = TRUE, model_fstring = default_fstring,
+location_de <- all_pairwise(tx_pairwise_input, filter = TRUE, model_fstring = default_fstring,
                             keepers = location_keepers, model_svs = "svaseq")
 location_de
 ```
@@ -2832,7 +2004,7 @@ location_de
 ### Time
 
 ```{r}
-time_de <- all_pairwise(v3_pairwise_input, filter = TRUE, model_fstring = default_fstring,
+time_de <- all_pairwise(tx_pairwise_input, filter = TRUE, model_fstring = default_fstring,
                         keepers = time_keepers, model_svs = "svaseq")
 time_de
 ```
@@ -2869,13 +2041,13 @@ going on:
 
 ```{r}
 genotype_tables_full <- combine_de_tables(
-  genotype_de, keepers = genotype_keepers, label_column = label_column,
+  genotype_de, keepers = genotype_keepers, label_column = tx_label_column,
   fancy = TRUE,
-  excel = glue("08full_contrasts_excel/genotype_full_tables-v{ver}.xlsx"))
+  excel = glue("08full_contrasts_excel_tx/genotype_full_tables-v{ver}.xlsx"))
 genotype_tables_full
 genotype_sig_full <- extract_significant_genes(
   genotype_tables_full, according_to = "deseq",
-  excel = glue("08full_contrasts_excel/genotype_full_sig-v{ver}.xlsx"))
+  excel = glue("08full_contrasts_excel_tx/genotype_full_sig-v{ver}.xlsx"))
 genotype_sig_full
 ```
 
@@ -2886,14 +2058,14 @@ do the inclusions.
 
 ```{r}
 genotype_full_gp <- all_gprofiler(genotype_sig_full, species = "mmusculus",
-                                  excel = "09full_contrasts_enrich/genotype_full_gprofiler.xlsx")
+                                  excel = "09full_contrasts_enrich_tx/genotype_full_gprofiler.xlsx")
 genotype_full_cp <- all_cprofiler(genotype_sig_full, genotype_tables_full,
                                   orgdb = "org.Mm.eg.db", go_level = go_level, organism = "mouse",
                                   orgdb_from = orgdb_from, max_groupsize = max_groupsize,
-                                  excel = "09full_contrasts_enrich/genotype_full_cprofiler.xlsx")
+                                  excel = "09full_contrasts_enrich_tx/genotype_full_cprofiler.xlsx")
 genotype_full_upset <- upsetr_sig(genotype_sig_full)
 genotype_full_intersects <- write_upset_groups(genotype_full_upset,
-                                               excel = "09full_contrasts_intersections/genotype_full_gene_groups.xlsx")
+                                               excel = "09full_contrasts_intersections_tx/genotype_full_gene_groups.xlsx")
 ```
 
 Now separate the various genotype tables and perform the inclusions of
@@ -2916,11 +2088,11 @@ for (k in seq_along(genotype_keepers)) {
   include_df <- genotype_inclusions[[include_df_name]]
   includes <- genotype_inclusions[[include_name]]
   summary(rownames(genotype_sig_full[["deseq"]][["ups"]][[name]]) %in% includes)
-  include_filename <- glue("10genotype_contrasts_excel/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
-  include_sig_filename <- glue("10genotype_contrasts_excel/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
+  include_filename <- glue("10genotype_contrasts_excel_tx/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
+  include_sig_filename <- glue("10genotype_contrasts_excel_tx/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
   genotype_tables[[name]] <- combine_de_tables(
     genotype_de, extra_annot = include_df,
-    keepers = keeper, label_column = label_column,
+    keepers = keeper, label_column = tx_label_column,
     excel = include_filename, wanted_genes = includes)
   print(genotype_tables[[name]])
   genotype_sig[[name]] <- extract_significant_genes(
@@ -2937,10 +2109,6 @@ for (k in seq_along(genotype_keepers)) {
       genotype_sig[[name]], genotype_tables[[name]],
       orgdb = "org.Mm.eg.db", orgdb_from = orgdb_from,
       go_level = go_level, max_groupsize = max_groupsize, organism = "mouse")
-    genotype_cp_test[[name]] <- all_cprofiler(
-      genotype_sig[[name]], genotype_tables[[name]],
-      orgdb = "org.Mm.eg.db", orgdb_from = orgdb_from, organism = "mouse")
-
     #if (!is.null(get0("m2_gsc"))) {
     #  genotype_en[[name]] <- all_enricher(genotype_sig[[name]], gsc = m2_gsc,
     #                                      orgdb = "org.Mm.eg.db", from = "ENSEMBL", to = "SYMBOL")
@@ -2984,30 +2152,30 @@ for (k in seq_along(genotype_keepers)) {
       cc_sig <- genotype_cp[[name]][[upp]][["go_data"]][["CC_enrich"]]
       bp_sig <- genotype_cp[[name]][[upp]][["go_data"]][["BP_enrich"]]
       mf_plots_up <- plot_enrichresult(mf_sig)
-      mf_tree_up_filename <- glue("12clusterProfiler_plots/{name}_up_mf_sig_tree.pdf")
+      mf_tree_up_filename <- glue("12clusterProfiler_plots_tx/{name}_up_mf_sig_tree.pdf")
       pp(file = mf_tree_up_filename)
       try(print(mf_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_up_filename <- glue("12clusterProfiler_plots/{name}_up_mf_sig_bar.pdf")
+      mf_bar_up_filename <- glue("12clusterProfiler_plots_tx/{name}_up_mf_sig_dot.pdf")
       pp(file = mf_bar_up_filename)
       try(print(mf_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_up <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_up_filename <- glue("12clusterProfiler_plots/{name}_up_cc_sig_tree.pdf")
+      cc_tree_up_filename <- glue("12clusterProfiler_plots_tx/{name}_up_cc_sig_tree.pdf")
       pp(file = cc_tree_up_filename)
       try(print(cc_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_up_filename <- glue("12clusterProfiler_plots/{name}_up_cc_sig_bar.pdf")
+      cc_bar_up_filename <- glue("12clusterProfiler_plots_tx/{name}_up_cc_sig_dot.pdf")
       pp(file = cc_bar_up_filename)
       try(print(cc_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_up_filename <- glue("12clusterProfiler_plots/{name}_up_bp_sig_tree.pdf")
+      bp_tree_up_filename <- glue("12clusterProfiler_plots_tx/{name}_up_bp_sig_tree.pdf")
       pp(file = bp_tree_up_filename)
       try(print(bp_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_up_filename <- glue("12clusterProfiler_plots/{name}_up_bp_sig_bar.pdf")
+      bp_bar_up_filename <- glue("12clusterProfiler_plots_tx/{name}_up_bp_sig_dot.pdf")
       pp(file = bp_bar_up_filename)
       try(print(bp_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3017,30 +2185,30 @@ for (k in seq_along(genotype_keepers)) {
       cc_sig <- genotype_cp[[name]][[downp]][["go_data"]][["CC_enrich"]]
       bp_sig <- genotype_cp[[name]][[downp]][["go_data"]][["BP_enrich"]]
       mf_plots_down <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_down_filename <- glue("12clusterProfiler_plots/{name}_down_mf_sig_tree.pdf")
+      mf_tree_down_filename <- glue("12clusterProfiler_plots_tx/{name}_down_mf_sig_tree.pdf")
       pp(file = mf_tree_down_filename)
       try(print(mf_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_down_filename <- glue("12clusterProfiler_plots/{name}_down_mf_sig_bar.pdf")
+      mf_bar_down_filename <- glue("12clusterProfiler_plots_tx/{name}_down_mf_sig_dot.pdf")
       pp(file = mf_bar_down_filename)
       try(print(mf_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_down <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_down_filename <- glue("12clusterProfiler_plots/{name}_down_cc_sig_tree.pdf")
+      cc_tree_down_filename <- glue("12clusterProfiler_plots_tx/{name}_down_cc_sig_tree.pdf")
       pp(file = cc_tree_down_filename)
       try(print(cc_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_down_filename <- glue("12clusterProfiler_plots/{name}_down_cc_sig_bar.pdf")
+      cc_bar_down_filename <- glue("12clusterProfiler_plots_tx/{name}_down_cc_sig_dot.pdf")
       pp(file = cc_bar_down_filename)
       try(print(cc_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_down_filename <- glue("12clusterProfiler_plots/{name}_down_bp_sig_tree.pdf")
+      bp_tree_down_filename <- glue("12clusterProfiler_plots_tx/{name}_down_bp_sig_tree.pdf")
       pp(file = bp_tree_down_filename)
       try(print(bp_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, cateogories = go_categories)
-      bp_bar_down_filename <- glue("12clusterProfiler_plots/{name}_down_bp_sig_bar.pdf")
+      bp_bar_down_filename <- glue("12clusterProfiler_plots_tx/{name}_down_bp_sig_dot.pdf")
       pp(file = bp_bar_down_filename)
       try(print(bp_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3064,18 +2232,18 @@ interesting <- c("Opn4", "Gm9008", "Lrr1", "Cnbd1")
 kh_p08_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = colors[["het_retina"]], color_high = colors[["ko_retina"]],
-  label_column = "mgi_symbol", label = interesting, alpha = 1.0,
+  label_column = tx_label_column, label = interesting, alpha = 1.0,
   outline = outline, size = 4)
-pp(file = "13genotype_ma_volcano/kh_p08_retina_volcano.pdf", width = 9, height = 9)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_retina_volcano.pdf", width = 9, height = 9)
 kh_p08_retina_volcano[["plot"]]
 plotted <- dev.off()
 kh_p08_retina_volcano[["plot"]]
 kh_p08_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_retina"]], color_high = colors[["het_retina"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", outline = outline,
+  p_col = "deseq_adjp", label_column = "external_transcript_name", outline = outline,
   label = interesting)
-pp(file = "13genotype_ma_volcano/kh_p08_retina_ma.pdf", width = 9, height = 9)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_retina_ma.pdf", width = 9, height = 9)
 kh_p08_retina_ma[["plot"]]
 plotted <- dev.off()
 kh_p08_retina_ma[["plot"]]
@@ -3097,11 +2265,10 @@ interesting_genes <- c("Fign", "Nrn1", "Dpysl2", "Actb", "Fgf9", "Otx2", "Sec23"
                        "Dpysl3", "Lin7c", "Cadm1", "Snx12", "Rhoa", "Inpp5f",
                        "Atg12", "Set", "Gsk3b", "Pdcd4", "Gabra2", "Tmco1", "Anapc16")
 kh_p08_scn_volcano <- plot_volcano_condition_de(
-  table, table_name, fc_col = "deseq_logfc", p_col = "deseq
-_adjp",
-  label_column = "mgi_symbol", label = interesting_genes, size = 4, alpha = 1.0,
+  table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
+  label_column = "external_transcript_name", label = interesting_genes, size = 4, alpha = 1.0,
   outline = outline, color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]])
-pp(file = "13genotype_ma_volcano/kh_p08_scn_volcano.pdf", width = 9, height = 9)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_scn_volcano.pdf", width = 9, height = 9)
 kh_p08_scn_volcano[["plot"]]
 plotted <- dev.off()
 kh_p08_scn_volcano[["plot"]]
@@ -3110,8 +2277,8 @@ kh_p08_scn_volcano[["plot"]]
 kh_p08_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]],
-  outline = outline, p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes)
-pp(file = "13genotype_ma_volcano/kh_p08_scn_ma.pdf", width = 9, height = 9)
+  outline = outline, p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_scn_ma.pdf", width = 9, height = 9)
 kh_p08_scn_ma[["plot"]]
 plotted <- dev.off()
 kh_p08_scn_ma[["plot"]]
@@ -3132,8 +2299,8 @@ interesting_genes <- c(
 kh_p08_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]],
-  outline = outline, label_column = "mgi_symbol", label = interesting_genes, size = 4, alpha = 1.0)
-pp(file = "13genotype_ma_volcano/kh_p08_scn_volcano_v2.pdf", width = 9, height = 9)
+  outline = outline, label_column = "external_transcript_name", label = interesting_genes, size = 4, alpha = 1.0)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_scn_volcano_v2.pdf", width = 9, height = 9)
 kh_p08_scn_volcano[["plot"]]
 plotted <- dev.off()
 kh_p08_scn_volcano[["plot"]]
@@ -3142,8 +2309,8 @@ kh_p08_scn_volcano[["plot"]]
 kh_p08_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]],
-  outline = outline, p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes)
-pp(file = "13genotype_ma_volcano/kh_p08_scn_ma_v2.pdf", width = 9, height = 9)
+  outline = outline, p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_scn_ma_v2.pdf", width = 9, height = 9)
 kh_p08_scn_ma[["plot"]]
 plotted <- dev.off()
 kh_p08_scn_ma[["plot"]]
@@ -3158,8 +2325,8 @@ table <- table_input[["data"]][[table_name]]
 kh_p08_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_dlgn"]], color_high = colors[["het_dlgn"]],
-  outline = outline, label_column = "mgi_symbol", label = 10, size = 4, alpha = 1.0)
-pp(file = "13genotype_ma_volcano/kh_p08_dlgn_volcano.pdf", width = 9, height = 9)
+  outline = outline, label_column = "external_transcript_name", label = 10, size = 4, alpha = 1.0)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_dlgn_volcano.pdf", width = 9, height = 9)
 kh_p08_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 kh_p08_dlgn_volcano[["plot"]]
@@ -3167,8 +2334,8 @@ kh_p08_dlgn_volcano[["plot"]]
 kh_p08_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_dlgn"]], color_high = colors[["het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = 10, outline = outline)
-pp(file = "13genotype_ma_volcano/kh_p08_dlgn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = 10, outline = outline)
+pp(file = "13genotype_ma_volcano_tx/kh_p08_dlgn_ma.pdf", width = 9, height = 9)
 kh_p08_dlgn_ma[["plot"]]
 plotted <- dev.off()
 kh_p08_dlgn_ma[["plot"]]
@@ -3188,9 +2355,9 @@ interesting <- c("Opn4", "Gm9008", "Lrr1", "Cnbd1")
 kh_p15_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp", fill = "black",
   color_low = colors[["ko_retina"]], color_high = colors[["het_retina"]],
-  label_column = "mgi_symbol", label = interesting, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting, alpha = 1.0,
   outline = outline, size = 4)
-pp(file = "13genotype_ma_volcano/kh_p15_retina_volcano.pdf", width = 9, height = 9)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_retina_volcano.pdf", width = 9, height = 9)
 kh_p15_retina_volcano[["plot"]]
 plotted <- dev.off()
 kh_p15_retina_volcano[["plot"]]
@@ -3199,8 +2366,8 @@ kh_p15_retina_volcano[["plot"]]
 kh_p15_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_retina"]], color_high = colors[["het_retina"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting, outline = outline)
-pp(file = "13genotype_ma_volcano/kh_p15_retina_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting, outline = outline)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_retina_ma.pdf", width = 9, height = 9)
 kh_p15_retina_ma[["plot"]]
 plotted <- dev.off()
 kh_p15_retina_ma[["plot"]]
@@ -3220,17 +2387,17 @@ interesting_genes <- c("Fign", "Nrn1", "Dpysl2", "Actb", "Fgf9", "Otx2", "Sec23"
                        "Atg12", "Set", "Gsk3b", "Pdcd4", "Gabra2", "Tmco1", "Anapc16")
 kh_p15_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
-  label_column = "mgi_symbol", size = 4, alpha = 1.0,
+  label_column = "external_transcript_name", size = 4, alpha = 1.0,
   outline = outline, color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]])
-pp(file = "13genotype_ma_volcano/kh_p15_scn_volcano.pdf", width = 9, height = 9)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_scn_volcano.pdf", width = 9, height = 9)
 kh_p15_scn_volcano[["plot"]]
 plotted <- dev.off()
 kh_p15_scn_volcano[["plot"]]
 kh_p15_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "13genotype_ma_volcano/kh_p15_scn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_scn_ma.pdf", width = 9, height = 9)
 kh_p15_scn_ma[["plot"]]
 plotted <- dev.off()
 kh_p15_scn_ma[["plot"]]
@@ -3251,16 +2418,16 @@ interesting_genes <- c(
 kh_p15_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]],
-  outline = outline, label_column = "mgi_symbol", label = interesting_genes, size = 4, alpha = 1.0)
-pp(file = "13genotype_ma_volcano/kh_p15_scn_volcano_v2.pdf", width = 9, height = 9)
+  outline = outline, label_column = "external_transcript_name", label = interesting_genes, size = 4, alpha = 1.0)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_scn_volcano_v2.pdf", width = 9, height = 9)
 kh_p15_scn_volcano[["plot"]]
 plotted <- dev.off()
 kh_p15_scn_volcano[["plot"]]
 kh_p15_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_scn"]], color_high = colors[["het_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "13genotype_ma_volcano/kh_p15_scn_ma_v2.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_scn_ma_v2.pdf", width = 9, height = 9)
 kh_p15_scn_ma[["plot"]]
 plotted <- dev.off()
 kh_p15_scn_ma[["plot"]]
@@ -3275,8 +2442,8 @@ table <- table_input[["data"]][[table_name]]
 kh_p15_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_dlgn"]], color_high = colors[["het_dlgn"]],
-  outline = outline, label_column = "mgi_symbol", label = 10, size = 4, alpha = 1.0)
-pp(file = "13genotype_ma_volcano/kh_p15_dlgn_volcano.pdf", width = 9, height = 9)
+  outline = outline, label_column = "external_transcript_name", label = 10, size = 4, alpha = 1.0)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_dlgn_volcano.pdf", width = 9, height = 9)
 kh_p15_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 kh_p15_dlgn_volcano[["plot"]]
@@ -3284,8 +2451,8 @@ kh_p15_dlgn_volcano[["plot"]]
 kh_p15_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_dlgn"]], color_high = colors[["het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = 10, outline = outline)
-pp(file = "13genotype_ma_volcano/kh_p15_dlgn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = 10, outline = outline)
+pp(file = "13genotype_ma_volcano_tx/kh_p15_dlgn_ma.pdf", width = 9, height = 9)
 kh_p15_dlgn_ma[["plot"]]
 plotted <- dev.off()
 kh_p15_dlgn_ma[["plot"]]
@@ -3320,7 +2487,7 @@ merged <- merge(retina_subset, dlgn_subset, by = "ID")
 rownames(merged) <- make.names(merged[["ID"]], unique = TRUE)
 merged[["ID"]] <- NULL
 plotted <- plot_linear_scatter(merged)
-pp(file = "images/kh_p08_retina_vs_dlgn_deseq_logfc_values.png")
+pp(file = "images_tx/kh_p08_retina_vs_dlgn_deseq_logfc_values.png")
 plotted[["scatter"]]
 dev.off()
 plotted[["scatter"]]
@@ -3339,7 +2506,7 @@ merged <- merge(retina_subset, dlgn_subset, by = "ID")
 rownames(merged) <- make.names(merged[["ID"]], unique = TRUE)
 merged[["ID"]] <- NULL
 plotted <- plot_linear_scatter(merged)
-pp(file = "images/kh_p15_retina_vs_dlgn_deseq_logfc_values.png")
+pp(file = "images_tx/kh_p15_retina_vs_dlgn_deseq_logfc_values.png")
 plotted[["scatter"]]
 dev.off()
 plotted[["scatter"]]
@@ -3362,11 +2529,11 @@ for (k in seq_along(genotype_keepers)) {
   include_strict_df <- genotype_inclusions_strict[[include_df_name]]
   includes_strict <- genotype_inclusions_strict[[include_name]]
   summary(rownames(genotype_sig_full[["deseq"]][["ups"]][[name]]) %in% includes_strict)
-  include_filename <- glue("14genotype_strict_contrasts_excel/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
-  include_sig_filename <- glue("14genotype_strict_contrasts_excel/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
+  include_filename <- glue("14genotype_strict_contrasts_excel_tx/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
+  include_sig_filename <- glue("14genotype_strict_contrasts_excel_tx/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
   genotype_strict_tables[[name]] <- combine_de_tables(
     genotype_de, extra_annot = include_strict_df,
-    keepers = keeper, label_column = label_column,
+    keepers = keeper, label_column = tx_label_column,
     excel = include_filename, wanted_genes = includes_strict)
   print(genotype_strict_tables[[name]])
   genotype_strict_sig[[name]] <- extract_significant_genes(
@@ -3426,30 +2593,30 @@ for (k in seq_along(genotype_keepers)) {
       cc_sig <- genotype_strict_cp[[name]][[upp]][["go_data"]][["CC_enrich"]]
       bp_sig <- genotype_strict_cp[[name]][[upp]][["go_data"]][["BP_enrich"]]
       mf_plots_up <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_up_filename <- glue("16clusterProfiler_plots/{name}_up_mf_sig_tree.pdf")
+      mf_tree_up_filename <- glue("16clusterProfiler_plots_tx/{name}_up_mf_sig_tree.pdf")
       pp(file = mf_tree_up_filename)
       try(print(mf_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_up_filename <- glue("16clusterProfiler_plots/{name}_up_mf_sig_bar.pdf")
+      mf_bar_up_filename <- glue("16clusterProfiler_plots_tx/{name}_up_mf_sig_dot.pdf")
       pp(file = mf_bar_up_filename)
       try(print(mf_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_up <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_up_filename <- glue("16clusterProfiler_plots/{name}_up_cc_sig_tree.pdf")
+      cc_tree_up_filename <- glue("16clusterProfiler_plots_tx/{name}_up_cc_sig_tree.pdf")
       pp(file = cc_tree_up_filename)
       try(print(cc_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_up_filename <- glue("16clusterProfiler_plots/{name}_up_cc_sig_bar.pdf")
+      cc_bar_up_filename <- glue("16clusterProfiler_plots_tx/{name}_up_cc_sig_dot.pdf")
       pp(file = cc_bar_up_filename)
       try(print(cc_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_up_filename <- glue("16clusterProfiler_plots/{name}_up_bp_sig_tree.pdf")
+      bp_tree_up_filename <- glue("16clusterProfiler_plots_tx/{name}_up_bp_sig_tree.pdf")
       pp(file = bp_tree_up_filename)
       try(print(bp_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_up_filename <- glue("16clusterProfiler_plots/{name}_up_bp_sig_bar.pdf")
+      bp_bar_up_filename <- glue("16clusterProfiler_plots_tx/{name}_up_bp_sig_dot.pdf")
       pp(file = bp_bar_up_filename)
       try(print(bp_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3459,30 +2626,30 @@ for (k in seq_along(genotype_keepers)) {
       cc_sig <- genotype_strict_cp[[name]][[downp]][["go_data"]][["CC_enrich"]]
       bp_sig <- genotype_strict_cp[[name]][[downp]][["go_data"]][["BP_enrich"]]
       mf_plots_down <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_down_filename <- glue("16clusterProfiler_plots/{name}_down_mf_sig_tree.pdf")
+      mf_tree_down_filename <- glue("16clusterProfiler_plots_tx/{name}_down_mf_sig_tree.pdf")
       pp(file = mf_tree_down_filename)
       try(print(mf_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_down_filename <- glue("16clusterProfiler_plots/{name}_down_mf_sig_bar.pdf")
+      mf_bar_down_filename <- glue("16clusterProfiler_plots_tx/{name}_down_mf_sig_dot.pdf")
       pp(file = mf_bar_down_filename)
       try(print(mf_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_down <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_down_filename <- glue("16clusterProfiler_plots/{name}_down_cc_sig_tree.pdf")
+      cc_tree_down_filename <- glue("16clusterProfiler_plots_tx/{name}_down_cc_sig_tree.pdf")
       pp(file = cc_tree_down_filename)
       try(print(cc_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_down_filename <- glue("16clusterProfiler_plots/{name}_down_cc_sig_bar.pdf")
+      cc_bar_down_filename <- glue("16clusterProfiler_plots_tx/{name}_down_cc_sig_dot.pdf")
       pp(file = cc_bar_down_filename)
       try(print(cc_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_down_filename <- glue("16clusterProfiler_plots/{name}_down_bp_sig_tree.pdf")
+      bp_tree_down_filename <- glue("16clusterProfiler_plots_tx/{name}_down_bp_sig_tree.pdf")
       pp(file = bp_tree_down_filename)
       try(print(bp_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, cateogories = go_categories)
-      bp_bar_down_filename <- glue("16clusterProfiler_plots/{name}_down_bp_sig_bar.pdf")
+      bp_bar_down_filename <- glue("16clusterProfiler_plots_tx/{name}_down_bp_sig_dot.pdf")
       pp(file = bp_bar_down_filename)
       try(print(bp_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3502,17 +2669,17 @@ s/genotype/location/g.
 
 ```{r}
 location_tables_full <- combine_de_tables(
-  location_de, keepers = location_keepers, label_column = label_column,
-  excel = glue("17full_location_contrasts/location_full_tables-v{ver}.xlsx"))
+  location_de, keepers = location_keepers, label_column = tx_label_column,
+  excel = glue("17full_location_contrasts_tx/location_full_tables-v{ver}.xlsx"))
 location_tables_full
 location_sig_full <- extract_significant_genes(
   location_tables_full, according_to = "deseq",
-  excel = glue("17full_location_contrasts/location_full_sig-v{ver}.xlsx"))
+  excel = glue("17full_location_contrasts_tx/location_full_sig-v{ver}.xlsx"))
 location_sig_full
 location_full_upset <- upsetr_sig(location_sig_full)
 location_full_intersects <- write_upset_groups(
   location_full_upset,
-  excel = "excel/17full_location_contrasts/location_full_gene_groups.xlsx")
+  excel = "excel/17full_location_contrasts_tx/location_full_gene_groups.xlsx")
 ```
 
 ```{r}
@@ -3530,11 +2697,11 @@ for (k in seq_along(location_keepers)) {
   include_df <- location_inclusions[[include_df_name]]
   includes <- location_inclusions[[include_name]]
   summary(rownames(location_sig_full[["deseq"]][["ups"]][[name]]) %in% includes)
-  include_filename <- glue("18location_contrasts/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
-  include_sig_filename <- glue("18location_contrasts/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
+  include_filename <- glue("18location_contrasts_tx/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
+  include_sig_filename <- glue("18location_contrasts_tx/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
   location_tables[[name]] <- combine_de_tables(
     location_de, extra_annot = include_df,
-    keepers = keeper, label_column = label_column,
+    keepers = keeper, label_column = tx_label_column,
     excel = include_filename, wanted_genes = includes)
   print(location_tables[[name]])
   location_sig[[name]] <- extract_significant_genes(
@@ -3585,30 +2752,30 @@ for (k in seq_along(location_keepers)) {
       cc_sig <- location_cp[[name]][[upp]][["go_data"]][["CC_enrich"]]
       bp_sig <- location_cp[[name]][[upp]][["go_data"]][["BP_enrich"]]
       mf_plots_up <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_up_filename <- glue("19clusterProfiler_plots/{name}_up_mf_sig_tree.pdf")
+      mf_tree_up_filename <- glue("19clusterProfiler_plots_tx/{name}_up_mf_sig_tree.pdf")
       pp(file = mf_tree_up_filename)
       try(print(mf_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_up_filename <- glue("19clusterProfiler_plots/{name}_up_mf_sig_bar.pdf")
+      mf_bar_up_filename <- glue("19clusterProfiler_plots_tx/{name}_up_mf_sig_dot.pdf")
       pp(file = mf_bar_up_filename)
       try(print(mf_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_up <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_up_filename <- glue("19clusterProfiler_plots/{name}_up_cc_sig_tree.pdf")
+      cc_tree_up_filename <- glue("19clusterProfiler_plots_tx/{name}_up_cc_sig_tree.pdf")
       pp(file = cc_tree_up_filename)
       try(print(cc_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_up_filename <- glue("19clusterProfiler_plots/{name}_up_cc_sig_bar.pdf")
+      cc_bar_up_filename <- glue("19clusterProfiler_plots_tx/{name}_up_cc_sig_dot.pdf")
       pp(file = cc_bar_up_filename)
       try(print(cc_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_up_filename <- glue("19clusterProfiler_plots/{name}_up_bp_sig_tree.pdf")
+      bp_tree_up_filename <- glue("19clusterProfiler_plots_tx/{name}_up_bp_sig_tree.pdf")
       pp(file = bp_tree_up_filename)
       try(print(bp_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_up_filename <- glue("19clusterProfiler_plots/{name}_up_bp_sig_bar.pdf")
+      bp_bar_up_filename <- glue("19clusterProfiler_plots_tx/{name}_up_bp_sig_dot.pdf")
       pp(file = bp_bar_up_filename)
       try(print(bp_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3618,30 +2785,30 @@ for (k in seq_along(location_keepers)) {
       cc_sig <- location_cp[[name]][[downp]][["go_data"]][["CC_enrich"]]
       bp_sig <- location_cp[[name]][[downp]][["go_data"]][["BP_enrich"]]
       mf_plots_down <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_down_filename <- glue("19clusterProfiler_plots/{name}_down_mf_sig_tree.pdf")
+      mf_tree_down_filename <- glue("19clusterProfiler_plots_tx/{name}_down_mf_sig_tree.pdf")
       pp(file = mf_tree_down_filename)
       try(print(mf_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_down_filename <- glue("19clusterProfiler_plots/{name}_down_mf_sig_bar.pdf")
+      mf_bar_down_filename <- glue("19clusterProfiler_plots_tx/{name}_down_mf_sig_dot.pdf")
       pp(file = mf_bar_down_filename)
       try(print(mf_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_down <- plot_enrichresult(cc_sig, showCategory = 12)
-      cc_tree_down_filename <- glue("19clusterProfiler_plots/{name}_down_cc_sig_tree.pdf")
+      cc_tree_down_filename <- glue("19clusterProfiler_plots_tx/{name}_down_cc_sig_tree.pdf")
       pp(file = cc_tree_down_filename)
       try(print(cc_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_down_filename <- glue("19clusterProfiler_plots/{name}_down_cc_sig_bar.pdf")
+      cc_bar_down_filename <- glue("19clusterProfiler_plots_tx/{name}_down_cc_sig_dot.pdf")
       pp(file = cc_bar_down_filename)
       try(print(cc_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_down_filename <- glue("19clusterProfiler_plots/{name}_down_bp_sig_tree.pdf")
+      bp_tree_down_filename <- glue("19clusterProfiler_plots_tx/{name}_down_bp_sig_tree.pdf")
       pp(file = bp_tree_down_filename)
       try(print(bp_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_down_filename <- glue("19clusterProfiler_plots/{name}_down_bp_sig_bar.pdf")
+      bp_bar_down_filename <- glue("19clusterProfiler_plots_tx/{name}_down_bp_sig_dot.pdf")
       pp(file = bp_bar_down_filename)
       try(print(bp_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3677,17 +2844,17 @@ interesting_genes <- c("Opn4", "Eomes", "Trpc7", "Oprm1", "Nr4a3", "Tbx20",
 sr_p08_het_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["het_retina"]], color_high = colors[["het_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4)
-pp(file = "20location_ma_volcano/sr_p08_het_volcano.pdf", width = 9, height = 9)
+pp(file = "20location_ma_volcano_tx/sr_p08_het_volcano.pdf", width = 9, height = 9)
 sr_p08_het_volcano[["plot"]]
 plotted <- dev.off()
 sr_p08_het_volcano[["plot"]]
 sr_p08_het_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["het_retina"]], color_high = colors[["het_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "20location_ma_volcano/sr_p08_het_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "20location_ma_volcano_tx/sr_p08_het_ma.pdf", width = 9, height = 9)
 sr_p08_het_ma[["plot"]]
 plotted <- dev.off()
 sr_p08_het_ma[["plot"]]
@@ -3702,17 +2869,17 @@ table <- table_input[["data"]][[table_name]]
 sr_p08_ko_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4)
-pp(file = "20location_ma_volcano/sr_p08_ko_volcano.pdf", width = 9, height = 9)
+pp(file = "20location_ma_volcano_tx/sr_p08_ko_volcano.pdf", width = 9, height = 9)
 sr_p08_ko_volcano[["plot"]]
 plotted <- dev.off()
 sr_p08_ko_volcano[["plot"]]
 sr_p08_ko_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "20location_ma_volcano/sr_p08_ko_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "20location_ma_volcano_tx/sr_p08_ko_ma.pdf", width = 9, height = 9)
 sr_p08_ko_ma[["plot"]]
 plotted <- dev.off()
 sr_p08_ko_ma[["plot"]]
@@ -3732,17 +2899,17 @@ interesting_genes <- c("Opn4", "Eomes", "Trpc7", "Oprm1", "Nr4a3", "Tbx20",
 sr_p15_het_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["het_retina"]], color_high = colors[["het_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4)
-pp(file = "20location_ma_volcano/sr_p15_het_volcano.pdf", width = 9, height = 9)
+pp(file = "20location_ma_volcano_tx/sr_p15_het_volcano.pdf", width = 9, height = 9)
 sr_p15_het_volcano[["plot"]]
 plotted <- dev.off()
 sr_p15_het_volcano[["plot"]]
 sr_p15_het_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["het_retina"]], color_high = colors[["het_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "20location_ma_volcano/sr_p15_het_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "20location_ma_volcano_tx/sr_p15_het_ma.pdf", width = 9, height = 9)
 sr_p15_het_ma[["plot"]]
 plotted <- dev.off()
 sr_p15_het_ma[["plot"]]
@@ -3757,17 +2924,17 @@ table <- table_input[["data"]][[table_name]]
 sr_p15_ko_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "20location_ma_volcano/sr_p15_ko_volcano.pdf", width = 12, height = 12)
+pp(file = "20location_ma_volcano_tx/sr_p15_ko_volcano.pdf", width = 12, height = 12)
 sr_p15_ko_volcano[["plot"]]
 plotted <- dev.off()
 sr_p15_ko_volcano[["plot"]]
 sr_p15_ko_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "20location_ma_volcano/sr_p15_ko_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "20location_ma_volcano_tx/sr_p15_ko_ma.pdf", width = 9, height = 9)
 sr_p15_ko_ma[["plot"]]
 plotted <- dev.off()
 sr_p15_ko_ma[["plot"]]
@@ -3787,8 +2954,8 @@ query <- list("up" = rownames(test_table_up),
 query_upset <- UpSetR::fromList(query)
 UpSetR::upset(query_upset)
 
-query <- list("up" = test_table_up[["mgi_symbol"]],
-              "down" = test_table_down[["mgi_symbol"]])
+query <- list("up" = test_table_up[["external_transcript_name"]],
+              "down" = test_table_down[["external_transcript_name"]])
 query_upset <- UpSetR::fromList(query)
 UpSetR::upset(query_upset)
 ## ok, good.
@@ -3815,11 +2982,11 @@ for (k in seq_along(location_keepers)) {
   if (sum(found_includes) == 0) {
     next
   }
-  include_filename <- glue("21location_strict_contrasts/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
-  include_sig_filename <- glue("21location_strict_contrasts/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
+  include_filename <- glue("21location_strict_contrasts_tx/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
+  include_sig_filename <- glue("21location_strict_contrasts_tx/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
   location_strict_tables[[name]] <- combine_de_tables(
     location_de, extra_annot = include_df,
-    keepers = keeper, label_column = label_column,
+    keepers = keeper, label_column = tx_label_column,
     excel = include_filename, wanted_genes = includes)
   print(location_strict_tables[[name]])
   location_strict_sig[[name]] <- extract_significant_genes(
@@ -3870,30 +3037,30 @@ for (k in seq_along(location_keepers)) {
       cc_sig <- location_strict_cp[[name]][[upp]][["go_data"]][["CC_enrich"]]
       bp_sig <- location_strict_cp[[name]][[upp]][["go_data"]][["BP_enrich"]]
       mf_plots_up <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_up_filename <- glue("23clusterProfiler_plots/{name}_up_mf_sig_tree.pdf")
+      mf_tree_up_filename <- glue("23clusterProfiler_plots_tx/{name}_up_mf_sig_tree.pdf")
       pp(file = mf_tree_up_filename)
       try(print(mf_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_up_filename <- glue("23clusterProfiler_plots/{name}_up_mf_sig_bar.pdf")
+      mf_bar_up_filename <- glue("23clusterProfiler_plots_tx/{name}_up_mf_sig_dot.pdf")
       pp(file = mf_bar_up_filename)
       try(print(mf_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_up <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_up_filename <- glue("23clusterProfiler_plots/{name}_up_cc_sig_tree.pdf")
+      cc_tree_up_filename <- glue("23clusterProfiler_plots_tx/{name}_up_cc_sig_tree.pdf")
       pp(file = cc_tree_up_filename)
       try(print(cc_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_up_filename <- glue("23clusterProfiler_plots/{name}_up_cc_sig_bar.pdf")
+      cc_bar_up_filename <- glue("23clusterProfiler_plots_tx/{name}_up_cc_sig_dot.pdf")
       pp(file = cc_bar_up_filename)
       try(print(cc_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_up_filename <- glue("23clusterProfiler_plots/{name}_up_bp_sig_tree.pdf")
+      bp_tree_up_filename <- glue("23clusterProfiler_plots_tx/{name}_up_bp_sig_tree.pdf")
       pp(file = bp_tree_up_filename)
       try(print(bp_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_up_filename <- glue("23clusterProfiler_plots/{name}_up_bp_sig_bar.pdf")
+      bp_bar_up_filename <- glue("23clusterProfiler_plots_tx/{name}_up_bp_sig_dot.pdf")
       pp(file = bp_bar_up_filename)
       try(print(bp_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3903,30 +3070,30 @@ for (k in seq_along(location_keepers)) {
       cc_sig <- location_strict_cp[[name]][[downp]][["go_data"]][["CC_enrich"]]
       bp_sig <- location_strict_cp[[name]][[downp]][["go_data"]][["BP_enrich"]]
       mf_plots_down <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_down_filename <- glue("23clusterProfiler_plots/{name}_down_mf_sig_tree.pdf")
+      mf_tree_down_filename <- glue("23clusterProfiler_plots_tx/{name}_down_mf_sig_tree.pdf")
       pp(file = mf_tree_down_filename)
       try(print(mf_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_down_filename <- glue("23clusterProfiler_plots/{name}_down_mf_sig_bar.pdf")
+      mf_bar_down_filename <- glue("23clusterProfiler_plots_tx/{name}_down_mf_sig_dot.pdf")
       pp(file = mf_bar_down_filename)
       try(print(mf_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_down <- plot_enrichresult(cc_sig, showCategory = 12)
-      cc_tree_down_filename <- glue("23clusterProfiler_plots/{name}_down_cc_sig_tree.pdf")
+      cc_tree_down_filename <- glue("23clusterProfiler_plots_tx/{name}_down_cc_sig_tree.pdf")
       pp(file = cc_tree_down_filename)
       try(print(cc_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_down_filename <- glue("23clusterProfiler_plots/{name}_down_cc_sig_bar.pdf")
+      cc_bar_down_filename <- glue("23clusterProfiler_plots_tx/{name}_down_cc_sig_dot.pdf")
       pp(file = cc_bar_down_filename)
       try(print(cc_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_down_filename <- glue("23clusterProfiler_plots/{name}_down_bp_sig_tree.pdf")
+      bp_tree_down_filename <- glue("23clusterProfiler_plots_tx/{name}_down_bp_sig_tree.pdf")
       pp(file = bp_tree_down_filename)
       try(print(bp_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_down_filename <- glue("23clusterProfiler_plots/{name}_down_bp_sig_bar.pdf")
+      bp_bar_down_filename <- glue("23clusterProfiler_plots_tx/{name}_down_bp_sig_dot.pdf")
       pp(file = bp_bar_down_filename)
       try(print(bp_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -3962,17 +3129,17 @@ interesting_genes <- c("Opn4", "Eomes", "Trpc7", "Oprm1", "Nr4a3", "Tbx20",
 sr_p08_het_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["het_retina"]], color_high = colors[["het_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = tx_label_column, label = interesting_genes, alpha = 1.0,
   size = 4)
-pp(file = "24location_ma_volcano_strict/sr_p08_het_volcano.pdf", width = 9, height = 9)
+pp(file = "24location_ma_volcano_strict_tx/sr_p08_het_volcano.pdf", width = 9, height = 9)
 sr_p08_het_volcano[["plot"]]
 plotted <- dev.off()
 sr_p08_het_volcano[["plot"]]
 sr_p08_het_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["het_retina"]], color_high = colors[["het_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "24location_ma_volcano_strict/sr_p08_het_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = tx_label_column, label = interesting_genes, outline = outline)
+pp(file = "24location_ma_volcano_strict_tx/sr_p08_het_ma.pdf", width = 9, height = 9)
 sr_p08_het_ma[["plot"]]
 plotted <- dev.off()
 sr_p08_het_ma[["plot"]]
@@ -3987,17 +3154,17 @@ table <- table_input[["data"]][[table_name]]
 sr_p08_ko_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = tx_label_column, label = interesting_genes, alpha = 1.0,
   size = 4)
-pp(file = "24location_ma_volcano_strict/sr_p08_ko_volcano.pdf", width = 9, height = 9)
+pp(file = "24location_ma_volcano_strict_tx/sr_p08_ko_volcano.pdf", width = 9, height = 9)
 sr_p08_ko_volcano[["plot"]]
 plotted <- dev.off()
 sr_p08_ko_volcano[["plot"]]
 sr_p08_ko_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "24location_ma_volcano_strict/sr_p08_ko_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = tx_label_column, label = interesting_genes, outline = outline)
+pp(file = "24location_ma_volcano_strict_tx/sr_p08_ko_ma.pdf", width = 9, height = 9)
 sr_p08_ko_ma[["plot"]]
 plotted <- dev.off()
 sr_p08_ko_ma[["plot"]]
@@ -4012,17 +3179,17 @@ table <- table_input[["data"]][[table_name]]
 sr_p15_ko_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = tx_label_column, label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "24location_ma_volcano_strict/sr_p15_ko_volcano.pdf", width = 12, height = 12)
+pp(file = "24location_ma_volcano_strict_tx/sr_p15_ko_volcano.pdf", width = 12, height = 12)
 sr_p15_ko_volcano[["plot"]]
 plotted <- dev.off()
 sr_p15_ko_volcano[["plot"]]
 sr_p15_ko_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = colors[["ko_retina"]], color_high = colors[["ko_scn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "24location_ma_volcano_strict/sr_p15_ko_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = tx_label_column, label = interesting_genes, outline = outline)
+pp(file = "24location_ma_volcano_strict_tx/sr_p15_ko_ma.pdf", width = 9, height = 9)
 sr_p15_ko_ma[["plot"]]
 plotted <- dev.off()
 sr_p15_ko_ma[["plot"]]
@@ -4033,11 +3200,11 @@ sr_p15_ko_ma[["plot"]]
 ```{r}
 time_tables_full <- combine_de_tables(
   time_de, keepers = time_keepers,
-  label_column = label_column,
-  excel = glue("25full_contrasts_time/full_tables-v{ver}.xlsx"))
+  label_column = tx_label_column,
+  excel = glue("25full_contrasts_time_tx/full_tables-v{ver}.xlsx"))
 time_sig_full <- extract_significant_genes(
   time_tables_full, according_to = "deseq",
-  excel = glue("25full_contrasts_time/full_sig-v{ver}.xlsx"))
+  excel = glue("25full_contrasts_time_tx/full_sig-v{ver}.xlsx"))
 ```
 
 ```{r}
@@ -4055,11 +3222,11 @@ for (k in seq_along(time_keepers)) {
   include_df <- time_inclusions[[include_df_name]]
   includes <- time_inclusions[[include_name]]
   summary(rownames(time_sig_full[["deseq"]][["ups"]][[name]]) %in% includes)
-  include_filename <- glue("26time_contrasts/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
-  include_sig_filename <- glue("26time_contrasts/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
+  include_filename <- glue("26time_contrasts_tx/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
+  include_sig_filename <- glue("26time_contrasts_tx/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
   time_tables[[name]] <- combine_de_tables(
     time_de, extra_annot = include_df,
-    keepers = keeper, label_column = label_column,
+    keepers = keeper, label_column = tx_label_column,
     excel = include_filename, wanted_genes = includes)
   print(time_tables[[name]])
   time_sig[[name]] <- extract_significant_genes(
@@ -4107,30 +3274,30 @@ for (k in seq_along(time_keepers)) {
       cc_sig <- time_cp[[name]][[upp]][["go_data"]][["CC_enrich"]]
       bp_sig <- time_cp[[name]][[upp]][["go_data"]][["BP_enrich"]]
       mf_plots_up <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_up_filename <- glue("28clusterProfiler_plots/{name}_up_mf_sig_tree.pdf")
+      mf_tree_up_filename <- glue("28clusterProfiler_plots_tx/{name}_up_mf_sig_tree.pdf")
       pp(file = mf_tree_up_filename)
       try(print(mf_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_up_filename <- glue("28clusterProfiler_plots/{name}_up_mf_sig_bar.pdf")
+      mf_bar_up_filename <- glue("28clusterProfiler_plots_tx/{name}_up_mf_sig_dot.pdf")
       pp(file = mf_bar_up_filename)
       try(print(mf_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_up <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_up_filename <- glue("28clusterProfiler_plots/{name}_up_cc_sig_tree.pdf")
+      cc_tree_up_filename <- glue("28clusterProfiler_plots_tx/{name}_up_cc_sig_tree.pdf")
       pp(file = cc_tree_up_filename)
       try(print(cc_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_up_filename <- glue("28clusterProfiler_plots/{name}_up_cc_sig_bar.pdf")
+      cc_bar_up_filename <- glue("28clusterProfiler_plots_tx/{name}_up_cc_sig_dot.pdf")
       pp(file = cc_bar_up_filename)
       try(print(cc_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_up_filename <- glue("28clusterProfiler_plots/{name}_up_bp_sig_tree.pdf")
+      bp_tree_up_filename <- glue("28clusterProfiler_plots_tx/{name}_up_bp_sig_tree.pdf")
       pp(file = bp_tree_up_filename)
       try(print(bp_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_up_filename <- glue("28clusterProfiler_plots/{name}_up_bp_sig_bar.pdf")
+      bp_bar_up_filename <- glue("28clusterProfiler_plots_tx/{name}_up_bp_sig_dot.pdf")
       pp(file = bp_bar_up_filename)
       try(print(bp_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -4140,30 +3307,30 @@ for (k in seq_along(time_keepers)) {
       cc_sig <- time_cp[[name]][[downp]][["go_data"]][["CC_enrich"]]
       bp_sig <- time_cp[[name]][[downp]][["go_data"]][["BP_enrich"]]
       mf_plots_down <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_down_filename <- glue("28clusterProfiler_plots/{name}_down_mf_sig_tree.pdf")
+      mf_tree_down_filename <- glue("28clusterProfiler_plots_tx/{name}_down_mf_sig_tree.pdf")
       pp(file = mf_tree_down_filename)
       try(print(mf_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_down_filename <- glue("28clusterProfiler_plots/{name}_down_mf_sig_bar.pdf")
+      mf_bar_down_filename <- glue("28clusterProfiler_plots_tx/{name}_down_mf_sig_dot.pdf")
       pp(file = mf_bar_down_filename)
       try(print(mf_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_down <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_down_filename <- glue("28clusterProfiler_plots/{name}_down_cc_sig_tree.pdf")
+      cc_tree_down_filename <- glue("28clusterProfiler_plots_tx/{name}_down_cc_sig_tree.pdf")
       pp(file = cc_tree_down_filename)
       try(print(cc_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_down_filename <- glue("28clusterProfiler_plots/{name}_down_cc_sig_bar.pdf")
+      cc_bar_down_filename <- glue("28clusterProfiler_plots_tx/{name}_down_cc_sig_dot.pdf")
       pp(file = cc_bar_down_filename)
       try(print(cc_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_down_filename <- glue("28clusterProfiler_plots/{name}_down_bp_sig_tree.pdf")
+      bp_tree_down_filename <- glue("28clusterProfiler_plots_tx/{name}_down_bp_sig_tree.pdf")
       pp(file = bp_tree_down_filename)
       try(print(bp_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_down_filename <- glue("28clusterProfiler_plots/{name}_down_bp_sig_bar.pdf")
+      bp_bar_down_filename <- glue("28clusterProfiler_plots_tx/{name}_down_bp_sig_dot.pdf")
       pp(file = bp_bar_down_filename)
       try(print(bp_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -4183,17 +3350,17 @@ table <- table_input[["data"]][[table_name]]
 t_het_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "29time_ma_volcano/t_het_dlgn_volcano.pdf", width = 12, height = 12)
+pp(file = "29time_ma_volcano_tx/t_het_dlgn_volcano.pdf", width = 12, height = 12)
 t_het_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 t_het_dlgn_volcano[["plot"]]
 t_het_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "29time_ma_volcano/t_het_dlgn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "29time_ma_volcano_tx/t_het_dlgn_ma.pdf", width = 9, height = 9)
 t_het_dlgn_ma[["plot"]]
 plotted <- dev.off()
 t_het_dlgn_ma[["plot"]]
@@ -4208,17 +3375,17 @@ table <- table_input[["data"]][[table_name]]
 t_ko_dlgn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "29time_ma_volcano/t_ko_dlgn_volcano.pdf", width = 12, height = 12)
+pp(file = "29time_ma_volcano_tx/t_ko_dlgn_volcano.pdf", width = 12, height = 12)
 t_ko_dlgn_volcano[["plot"]]
 plotted <- dev.off()
 t_ko_dlgn_volcano[["plot"]]
 t_ko_dlgn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "29time_ma_volcano/t_ko_dlgn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "29time_ma_volcano_tx/t_ko_dlgn_ma.pdf", width = 9, height = 9)
 t_ko_dlgn_ma[["plot"]]
 plotted <- dev.off()
 t_ko_dlgn_ma[["plot"]]
@@ -4233,17 +3400,17 @@ table <- table_input[["data"]][[table_name]]
 t_het_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = time_colors[["p08_het_retina"]], color_high = time_colors[["p15_het_retina"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "29time_ma_volcano/t_het_retina_volcano.pdf", width = 12, height = 12)
+pp(file = "29time_ma_volcano_tx/t_het_retina_volcano.pdf", width = 12, height = 12)
 t_het_retina_volcano[["plot"]]
 plotted <- dev.off()
 t_het_retina_volcano[["plot"]]
 t_het_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = time_colors[["p08_het_retina"]], color_high = time_colors[["p15_het_retina"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "29time_ma_volcano/t_het_retina_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "29time_ma_volcano_tx/t_het_retina_ma.pdf", width = 9, height = 9)
 t_het_retina_ma[["plot"]]
 plotted <- dev.off()
 t_het_retina_ma[["plot"]]
@@ -4258,17 +3425,17 @@ table <- table_input[["data"]][[table_name]]
 t_ko_retina_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "29time_ma_volcano/t_ko_retina_volcano.pdf", width = 12, height = 12)
+pp(file = "29time_ma_volcano_tx/t_ko_retina_volcano.pdf", width = 12, height = 12)
 t_ko_retina_volcano[["plot"]]
 plotted <- dev.off()
 t_ko_retina_volcano[["plot"]]
 t_ko_retina_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "29time_ma_volcano/t_ko_retina_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "29time_ma_volcano_tx/t_ko_retina_ma.pdf", width = 9, height = 9)
 t_ko_retina_ma[["plot"]]
 plotted <- dev.off()
 t_ko_retina_ma[["plot"]]
@@ -4283,17 +3450,17 @@ table <- table_input[["data"]][[table_name]]
 t_het_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "29time_ma_volcano/t_het_scn_volcano.pdf", width = 12, height = 12)
+pp(file = "29time_ma_volcano_tx/t_het_scn_volcano.pdf", width = 12, height = 12)
 t_het_scn_volcano[["plot"]]
 plotted <- dev.off()
 t_het_scn_volcano[["plot"]]
 t_het_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "29time_ma_volcano/t_het_scn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "29time_ma_volcano_tx/t_het_scn_ma.pdf", width = 9, height = 9)
 t_het_scn_ma[["plot"]]
 plotted <- dev.off()
 t_het_scn_ma[["plot"]]
@@ -4308,17 +3475,17 @@ table <- table_input[["data"]][[table_name]]
 t_ko_scn_volcano <- plot_volcano_condition_de(
   table, table_name, fc_col = "deseq_logfc", p_col = "deseq_adjp",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  label_column = "mgi_symbol", label = interesting_genes, alpha = 1.0,
+  label_column = "external_transcript_name", label = interesting_genes, alpha = 1.0,
   size = 4, min.segment.length = 0, point.padding = 0.2)
-pp(file = "29time_ma_volcano/t_ko_scn_volcano.pdf", width = 12, height = 12)
+pp(file = "29time_ma_volcano_tx/t_ko_scn_volcano.pdf", width = 12, height = 12)
 t_ko_scn_volcano[["plot"]]
 plotted <- dev.off()
 t_ko_scn_volcano[["plot"]]
 t_ko_scn_ma <- plot_ma_condition_de(
   table, table_name, expr_col = "deseq_basemean", fc_col = "deseq_logfc",
   color_low = time_colors[["p08_het_dlgn"]], color_high = time_colors[["p15_het_dlgn"]],
-  p_col = "deseq_adjp", label_column = "mgi_symbol", label = interesting_genes, outline = outline)
-pp(file = "29time_ma_volcano/t_ko_scn_ma.pdf", width = 9, height = 9)
+  p_col = "deseq_adjp", label_column = "external_transcript_name", label = interesting_genes, outline = outline)
+pp(file = "29time_ma_volcano_tx/t_ko_scn_ma.pdf", width = 9, height = 9)
 t_ko_scn_ma[["plot"]]
 plotted <- dev.off()
 t_ko_scn_ma[["plot"]]
@@ -4345,8 +3512,8 @@ for (k in seq_along(time_keepers)) {
   if (sum(found_includes) == 0) {
     next
   }
-  include_filename <- glue("30time_strict_contrasts_excel/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
-  include_sig_filename <- glue("30time_strict_contrasts_excel/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
+  include_filename <- glue("30time_strict_contrasts_excel_tx/{name}_including_wt_{lfc_cutoff}_decreased_table-v{ver}.xlsx")
+  include_sig_filename <- glue("30time_strict_contrasts_excel_tx/{name}_including_wt_{lfc_cutoff}_decreased_sig-v{ver}.xlsx")
   time_strict_tables[[name]] <- combine_de_tables(
     time_de, extra_annot = include_df,
     keepers = keeper, label_column = label_column,
@@ -4406,30 +3573,30 @@ for (k in seq_along(time_keepers)) {
       cc_sig <- time_cp[[name]][[upp]][["go_data"]][["CC_enrich"]]
       bp_sig <- time_cp[[name]][[upp]][["go_data"]][["BP_enrich"]]
       mf_plots_up <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_up_filename <- glue("32cp_trees/{name}_up_mf_sig_tree.pdf")
+      mf_tree_up_filename <- glue("32cp_trees_tx/{name}_up_mf_sig_tree.pdf")
       pp(file = mf_tree_up_filename)
       try(print(mf_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_up_filename <- glue("32cp_bar/{name}_up_mf_sig_bar.pdf")
+      mf_bar_up_filename <- glue("32cp_bar_tx/{name}_up_mf_sig_dot.pdf")
       pp(file = mf_bar_up_filename)
       try(print(mf_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_up <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_up_filename <- glue("32cp_trees/{name}_up_cc_sig_tree.pdf")
+      cc_tree_up_filename <- glue("32cp_trees_tx/{name}_up_cc_sig_tree.pdf")
       pp(file = cc_tree_up_filename)
       try(print(cc_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_up_filename <- glue("32cp_bar/{name}_up_cc_sig_bar.pdf")
+      cc_bar_up_filename <- glue("32cp_bar_tx/{name}_up_cc_sig_dot.pdf")
       pp(file = cc_bar_up_filename)
       try(print(cc_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_up_filename <- glue("32cp_trees/{name}_up_bp_sig_tree.pdf")
+      bp_tree_up_filename <- glue("32cp_trees_tx/{name}_up_bp_sig_tree.pdf")
       pp(file = bp_tree_up_filename)
       try(print(bp_plots_up[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_up <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_up_filename <- glue("32cp_bar/{name}_up_bp_sig_bar.pdf")
+      bp_bar_up_filename <- glue("32cp_bar_tx/{name}_up_bp_sig_dot.pdf")
       pp(file = bp_bar_up_filename)
       try(print(bp_plots_up[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -4439,30 +3606,30 @@ for (k in seq_along(time_keepers)) {
       cc_sig <- time_cp[[name]][[downp]][["go_data"]][["CC_enrich"]]
       bp_sig <- time_cp[[name]][[downp]][["go_data"]][["BP_enrich"]]
       mf_plots_down <- plot_enrichresult(mf_sig, showCategory = go_categories)
-      mf_tree_down_filename <- glue("32cp_trees/{name}_down_mf_sig_tree.pdf")
+      mf_tree_down_filename <- glue("32cp_trees_tx/{name}_down_mf_sig_tree.pdf")
       pp(file = mf_tree_down_filename)
       try(print(mf_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      mf_bar_down_filename <- glue("32cp_bar/{name}_down_mf_sig_bar.pdf")
+      mf_bar_down_filename <- glue("32cp_bar_tx/{name}_down_mf_sig_dot.pdf")
       pp(file = mf_bar_down_filename)
       try(print(mf_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       cc_plots_down <- plot_enrichresult(cc_sig, showCategory = go_categories)
-      cc_tree_down_filename <- glue("32cp_trees/{name}_down_cc_sig_tree.pdf")
+      cc_tree_down_filename <- glue("32cp_trees_tx/{name}_down_cc_sig_tree.pdf")
       pp(file = cc_tree_down_filename)
       try(print(cc_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
-      cc_bar_down_filename <- glue("32cp_bar/{name}_down_cc_sig_bar.pdf")
+      cc_bar_down_filename <- glue("32cp_bar_tx/{name}_down_cc_sig_dot.pdf")
       pp(file = cc_bar_down_filename)
       try(print(cc_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_tree_down_filename <- glue("32cp_trees/{name}_down_bp_sig_tree.pdf")
+      bp_tree_down_filename <- glue("32cp_trees_tx/{name}_down_bp_sig_tree.pdf")
       pp(file = bp_tree_down_filename)
       try(print(bp_plots_down[["tree"]]), silent = TRUE)
       plotted <- dev.off()
       bp_plots_down <- plot_enrichresult(bp_sig, showCategory = go_categories)
-      bp_bar_down_filename <- glue("32cp_bar/{name}_down_bp_sig_bar.pdf")
+      bp_bar_down_filename <- glue("32cp_bar_tx/{name}_down_bp_sig_dot.pdf")
       pp(file = bp_bar_down_filename)
       try(print(bp_plots_down[["dot"]]), silent = TRUE)
       plotted <- dev.off()
@@ -4510,7 +3677,7 @@ scn_translatome_keepers <- list(
   "p15het" = c("p15_het_scn", "p15_het_retina"),
   "p15ko" = c("p15_ko_scn", "p15_ko_retina"),
   "p15_scn_translatome" = c("p15het", "p15ko"))
-filt <- normalize(v3_pairwise_input, filter = TRUE)
+filt <- normalize(tx_pairwise_input, filter = TRUE)
 limma_test <- limma_pairwise(filt,
                              keepers = scn_translatome_de_keepers,
                              model_fstring = "~ 0 + condition",
@@ -4519,7 +3686,7 @@ edger_test <- edger_pairwise(filt,
                              keepers = scn_translatome_de_keepers,
                              model_fstring = "~ 0 + condition",
                              model_svs = FALSE, extra_contrasts = scn_extra)
-scn_translatome_de <- all_pairwise(v3_pairwise_input, filter = TRUE,
+scn_translatome_de <- all_pairwise(tx_pairwise_input, filter = TRUE,
                                    keepers = scn_translatome_de_keepers,
                                    model_svs = FALSE,
                                    model_fstring = "~ 0 + condition",
@@ -4528,8 +3695,8 @@ scn_translatome_de <- all_pairwise(v3_pairwise_input, filter = TRUE,
                                    extra_contrasts = scn_extra)
 scn_combined_test <- combine_de_tables(
   scn_translatome_de, keepers = scn_translatome_keepers,
-  excel = glue("33translatome_xlsx/test_scn_translatome_unfiltered_nosva-v{ver}.xlsx"))
-scn_translatome_de_sva <- all_pairwise(v3_pairwise_input, filter = TRUE,
+  excel = glue("33translatome_xlsx_tx/test_scn_translatome_unfiltered_nosva-v{ver}.xlsx"))
+scn_translatome_de_sva <- all_pairwise(tx_pairwise_input, filter = TRUE,
                                        keepers = scn_translatome_de_keepers,
                                        model_svs = "svaseq",
                                        model_fstring = "~ 0 + condition",
@@ -4538,7 +3705,7 @@ scn_translatome_de_sva <- all_pairwise(v3_pairwise_input, filter = TRUE,
                                        extra_contrasts = scn_extra)
 scn_combined_test_sva <- combine_de_tables(
   scn_translatome_de_sva, keepers = scn_translatome_keepers,
-  excel = glue("33translatome_xlsx/test_scn_translatome_unfiltered_sva-v{ver}.xlsx"))
+  excel = glue("33translatome_xlsx_tx/test_scn_translatome_unfiltered_sva-v{ver}.xlsx"))
 ```
 
 ### Subtracting DESeq2 results: p08 scn het vs ko
@@ -4550,7 +3717,7 @@ p08_scn_combined_deseq <- subtract_de_results(
   first_lfc = "deseq_logfc", second_lfc = "deseq_logfc",
   first_p = "deseq_adjp", second_p = "deseq_adjp",
   first_name = "het", second_name = "ko",
-  excel = glue("33translatome_xlsx/translatome_p08_scn_combined_deseq-v{ver}.xlsx"))
+  excel = glue("33translatome_xlsx_tx/translatome_p08_scn_combined_deseq-v{ver}.xlsx"))
 ```
 
 ### Subtracting DESeq2 results: p15 scn het vs ko
@@ -4562,7 +3729,7 @@ p15_scn_combined_deseq <- subtract_de_results(
   first_lfc = "deseq_logfc", second_lfc = "deseq_logfc",
   first_p = "deseq_adjp", second_p = "deseq_adjp",
   first_name = "het", second_name = "ko",
-  excel = glue("34translatome_deseqsub_xlsx/translatome_p15_scn_combined_deseq-v{ver}.xlsx"))
+  excel = glue("34translatome_deseqsub_xlsx_tx/translatome_p15_scn_combined_deseq-v{ver}.xlsx"))
 ```
 
 ## One dlgn/retina comparison
@@ -4578,7 +3745,7 @@ p08_dlgn_translatome_keepers <- list(
   "p08_het_dlgn_vs_retina" = c("p08_het_dlgn", "p08_het_retina"),
   "p08_ko_dlgn_vs_retina" = c("p08_ko_dlgn", "p08_ko_retina"),
   "p08_dlgn_translatome" = c("p08het", "p08ko"))
-p08_dlgn_translatome_de <- all_pairwise(v3_pairwise_input, filter = TRUE,
+p08_dlgn_translatome_de <- all_pairwise(tx_pairwise_input, filter = TRUE,
                                         keepers = p08_dlgn_translatome_de_keepers,
                                         model_svs = FALSE,
                                         model_fstring = "~ 0 + condition",
@@ -4588,8 +3755,8 @@ p08_dlgn_translatome_de <- all_pairwise(v3_pairwise_input, filter = TRUE,
 p08_dlgn_combined_test <- combine_de_tables(
   p08_dlgn_translatome_de, keepers = p08_dlgn_translatome_keepers,
   label_column = label_column,
-  excel = glue("33translatome_xlsx/test_p08_dlgn_translatome_unfiltered_nosva-v{ver}.xlsx"))
-p08_dlgn_translatome_de_sva <- all_pairwise(v3_pairwise_input, filter = TRUE,
+  excel = glue("33translatome_xlsx_tx/test_p08_dlgn_translatome_unfiltered_nosva-v{ver}.xlsx"))
+p08_dlgn_translatome_de_sva <- all_pairwise(tx_pairwise_input, filter = TRUE,
                                             keepers = p08_dlgn_translatome_de_keepers,
                                             model_svs = "svaseq",
                                             model_fstring = "~ 0 + condition",
@@ -4599,7 +3766,7 @@ p08_dlgn_translatome_de_sva <- all_pairwise(v3_pairwise_input, filter = TRUE,
 p08_dlgn_combined_test_sva <- combine_de_tables(
   p08_dlgn_translatome_de_sva, keepers = p08_dlgn_translatome_keepers,
   label_column = label_column,
-  excel = glue("33translatome_xlsx/test_p08_dlgn_translatome_unfiltered_sva-v{ver}.xlsx"))
+  excel = glue("33translatome_xlsx_tx/test_p08_dlgn_translatome_unfiltered_sva-v{ver}.xlsx"))
 ```
 
 ### Subtracting the DESeq2 results
@@ -4631,7 +3798,7 @@ time_scn_translatome_keepers <- list(
   "p08_het_sc_vs_retina" = c("p08_het_scn", "p08_het_retina"),
   "scn_het_translatome" = c("p15het", "p08het"),
   "scn_ko_translatome" = c("p15ko", "p08ko"))
-time_scn_translatome_de <- all_pairwise(v3_pairwise_input, filter = TRUE,
+time_scn_translatome_de <- all_pairwise(tx_pairwise_input, filter = TRUE,
                                         keepers = time_scn_translatome_de_keepers,
                                         model_svs = FALSE,
                                         model_fstring = "~ 0 + condition",
@@ -4642,8 +3809,8 @@ time_scn_translatome_test <- combine_de_tables(
   time_scn_translatome_de,
   keepers = time_scn_translatome_keepers,
   label_column = label_column,
-  excel = glue("33translatome_xlsx/test_time_scn_translatome_unfiltered_nosva-v{ver}.xlsx"))
-time_scn_translatome_de_sva <- all_pairwise(v3_pairwise_input, filter = TRUE,
+  excel = glue("33translatome_xlsx_tx/test_time_scn_translatome_unfiltered_nosva-v{ver}.xlsx"))
+time_scn_translatome_de_sva <- all_pairwise(tx_pairwise_input, filter = TRUE,
                                             keepers = time_scn_translatome_de_keepers,
                                             model_svs = "svaseq",
                                             model_fstring = "~ 0 + condition",
@@ -4654,7 +3821,7 @@ time_scn_translatome_test_sva <- combine_de_tables(
   time_scn_translatome_de_sva,
   keepers = time_scn_translatome_keepers,
   label_column = label_column,
-  excel = glue("33translatome_xlsx/test_time_scn_translatome_unfiltered_sva-v{ver}.xlsx"))
+  excel = glue("33translatome_xlsx_tx/test_time_scn_translatome_unfiltered_sva-v{ver}.xlsx"))
 ```
 
 Next step: Perform the retina filter; need to think about the proper
@@ -4714,7 +3881,7 @@ p08_dlgn_combined_deseq <- subtract_de_results(
   first_lfc = "deseq_logfc", second_lfc = "deseq_logfc",
   first_p = "deseq_adjp", second_p = "deseq_adjp",
   first_name = "het", second_name = "ko",
-  excel = glue("34translatome_deseqsub_xlsx/translatome_p08_dlgn_combined_deseq-v{ver}.xlsx"))
+  excel = glue("34translatome_deseqsub_xlsx_tx/translatome_p08_dlgn_combined_deseq-v{ver}.xlsx"))
 ```
 
 See how similar these results are to those obtained from limma/edger.
@@ -4779,22 +3946,22 @@ keeper <- list("p08_scn_translatome" = c("p08het", "p08ko"))
 p08_scn_translatome_union_filtered <- combine_de_tables(
   scn_translatome_de, keepers = keeper,
   label_column = label_column,
-  excel = glue("35translatome_union/p08_scn_translatome_union_filtered_nosva-v{ver}.xlsx"),
+  excel = glue("35translatome_union_tx/p08_scn_translatome_union_filtered_nosva-v{ver}.xlsx"),
   wanted_genes = both_union)
 p08_scn_translatome_inter_filtered <- combine_de_tables(
   scn_translatome_de, keepers = keeper,
   label_column = label_column,
-  excel = glue("35translatome_union/p08_scn_translatome_intersect_filtered_nosva-v{ver}.xlsx"),
+  excel = glue("35translatome_union_tx/p08_scn_translatome_intersect_filtered_nosva-v{ver}.xlsx"),
   wanted_genes = both_inter)
 p08_scn_translatome_union_filtered_sva <- combine_de_tables(
   scn_translatome_de_sva, keepers = keeper,
   label_column = label_column,
-  excel = glue("35translatome_union/p08_scn_translatome_union_filtered_sva-v{ver}.xlsx"),
+  excel = glue("35translatome_union_tx/p08_scn_translatome_union_filtered_sva-v{ver}.xlsx"),
   wanted_genes = both_union)
 p08_scn_translatome_union_filtered <- combine_de_tables(
   scn_translatome_de, keepers = keeper,
   label_column = label_column,
-  excel = glue("35translatome_union/p08_scn_translatome_intersect_filtered_sva-v{ver}.xlsx"),
+  excel = glue("35translatome_union_tx/p08_scn_translatome_intersect_filtered_sva-v{ver}.xlsx"),
   wanted_genes = both_inter)
 ```
 
@@ -4845,9 +4012,9 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- genotype_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 genotype_upsetr <- upsetr_sig(newsig)
-genotype_upset_written <- write_upset_groups(genotype_upsetr, excel = "36upset_genotype/genotype_upset_groups.xlsx")
+genotype_upset_written <- write_upset_groups(genotype_upsetr, excel = "36upset_genotype_tx/genotype_upset_groups.xlsx")
 genotype_upsetr[["all_plot"]]
-pp(file = "36upset_genotype/test_genotype_upset.pdf")
+pp(file = "36upset_genotype_tx/test_genotype_upset.pdf")
 print(genotype_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -4870,9 +4037,9 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- location_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 location_upsetr <- upsetr_sig(newsig)
-location_upset_written <- write_upset_groups(location_upsetr, excel = "36upset_genotype/sr_p08_hetko_upset_groups.xlsx")
+location_upset_written <- write_upset_groups(location_upsetr, excel = "36upset_genotype_tx/sr_p08_hetko_upset_groups.xlsx")
 location_upsetr[["all_plot"]]
-pp(file = "36upset_genotype/test_location_sr_p08_hetko_upset.pdf")
+pp(file = "36upset_genotype_tx/test_location_sr_p08_hetko_upset.pdf")
 print(location_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -4895,10 +4062,10 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- location_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 location_upsetr <- upsetr_sig(newsig)
-location_upset_written <- write_upset_groups(location_upsetr, excel = "36upset_genotype/sr_p15_hetko_upset_groups.xlsx")
+location_upset_written <- write_upset_groups(location_upsetr, excel = "36upset_genotype_tx/sr_p15_hetko_upset_groups.xlsx")
 location_upsetr[["all_plot"]]
 print(scn_retina_p15_upset_result)
-pp(file = "36upset_genotype/test_location_sr_p15_hetko_upset.pdf")
+pp(file = "36upset_genotype_tx/test_location_sr_p15_hetko_upset.pdf")
 print(location_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -4918,9 +4085,9 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- location_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 location_upsetr <- upsetr_sig(newsig)
-location_upset_written <- write_upset_groups(location_upsetr, excel = "3upset_genotype/dr_p08_hetko_upset_groups.xlsx")
+location_upset_written <- write_upset_groups(location_upsetr, excel = "3upset_genotype_tx/dr_p08_hetko_upset_groups.xlsx")
 location_upsetr[["all_plot"]]
-pp(file = "36upset_genotype/test_location_dr_p08_hetko_upset.pdf")
+pp(file = "36upset_genotype_tx/test_location_dr_p08_hetko_upset.pdf")
 print(location_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -4940,9 +4107,9 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- location_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 location_upsetr <- upsetr_sig(newsig)
-location_upset_written <- write_upset_groups(location_upsetr, excel = "37upset_location/dr_p15_hetko_upset_groups.xlsx")
+location_upset_written <- write_upset_groups(location_upsetr, excel = "37upset_location_tx/dr_p15_hetko_upset_groups.xlsx")
 location_upsetr[["all_plot"]]
-pp(file = "37upset_location/test_location_dr_p15_hetko_upset.pdf")
+pp(file = "37upset_location_tx/test_location_dr_p15_hetko_upset.pdf")
 print(location_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -4960,9 +4127,9 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- location_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 location_upsetr <- upsetr_sig(newsig)
-location_upset_written <- write_upset_groups(location_upsetr, excel = "37upset_location/ds_p08_hetko_upset_groups.xlsx")
+location_upset_written <- write_upset_groups(location_upsetr, excel = "37upset_location_tx/ds_p08_hetko_upset_groups.xlsx")
 location_upsetr[["all_plot"]]
-pp(file = "37upset_location/test_location_ds_p08_hetko_upset.pdf")
+pp(file = "37upset_location_tx/test_location_ds_p08_hetko_upset.pdf")
 print(location_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -4980,9 +4147,9 @@ for (sig in 2:length(table_names)) {
   newsig[["deseq"]][["downs"]][[name]] <- location_sig[[name]][["deseq"]][["downs"]][[name]]
 }
 location_upsetr <- upsetr_sig(newsig)
-location_upset_written <- write_upset_groups(location_upsetr, excel = "37upset_location/ds_p15_hetko_upset_groups.xlsx")
+location_upset_written <- write_upset_groups(location_upsetr, excel = "37upset_location_tx/ds_p15_hetko_upset_groups.xlsx")
 location_upsetr[["all_plot"]]
-pp(file = "37upset_location/test_location_ds_p15_hetko_upset.pdf")
+pp(file = "37upset_location_tx/test_location_ds_p15_hetko_upset.pdf")
 print(location_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5006,9 +4173,9 @@ because they are providing our cutoffs for nonspecific binding.
 ```{r}
 table_names <- c("p08_het_scn", "p08_het_retina")
 inclusion_upsetr <- upsetr_sig(inclusion_sig, contrasts = table_names)
-inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations/rs_p08_het_inclusion_upset_groups.xlsx")
+inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations_tx/rs_p08_het_inclusion_upset_groups.xlsx")
 inclusion_upsetr[["all_plot"]]
-pp(file = "37upset_locations/inclusion_sr_p08_upset.pdf")
+pp(file = "37upset_locations_tx/inclusion_sr_p08_upset.pdf")
 print(inclusion_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5018,9 +4185,9 @@ plotted <- dev.off()
 ```{r}
 table_names <- c("p15_het_scn", "p15_het_retina")
 inclusion_upsetr <- upsetr_sig(inclusion_sig, contrasts = table_names)
-inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations/rs_p15_het_inclusion_upset_groups.xlsx")
+inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations_tx/rs_p15_het_inclusion_upset_groups.xlsx")
 inclusion_upsetr[["all_plot"]]
-pp(file = "37upset_locations/inclusion_sr_p15_upset.pdf")
+pp(file = "37upset_locations_tx/inclusion_sr_p15_upset.pdf")
 print(inclusion_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5030,9 +4197,9 @@ plotted <- dev.off()
 ```{r}
 table_names <- c("p08_het_scn", "p08_het_retina", "p15_het_scn", "p15_het_retina")
 inclusion_upsetr <- upsetr_sig(inclusion_sig, contrasts = table_names)
-inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations/rs_p08p15_het_inclusion_upset_groups.xlsx")
+inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations_tx/rs_p08p15_het_inclusion_upset_groups.xlsx")
 inclusion_upsetr[["all_plot"]]
-pp(file = "37upset_locations/inclusion_sr_p08p15_upset.pdf")
+pp(file = "37upset_locations_tx/inclusion_sr_p08p15_upset.pdf")
 print(inclusion_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5042,9 +4209,9 @@ plotted <- dev.off()
 ```{r}
 table_names <- c("p08_ko_scn", "p08_ko_retina")
 inclusion_upsetr <- upsetr_sig(inclusion_sig, contrasts = table_names)
-inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations/rs_p08_ko_inclusion_upset_groups.xlsx")
+inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations_tx/rs_p08_ko_inclusion_upset_groups.xlsx")
 inclusion_upsetr[["all_plot"]]
-pp(file = "37upset_locations/inclusion_sr_p08_ko_upset.pdf")
+pp(file = "37upset_locations_tx/inclusion_sr_p08_ko_upset.pdf")
 print(inclusion_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5054,9 +4221,9 @@ plotted <- dev.off()
 ```{r}
 table_names <- c("p15_ko_scn", "p15_ko_retina")
 inclusion_upsetr <- upsetr_sig(inclusion_sig, contrasts = table_names)
-inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations/rs_p15_ko_inclusion_upset_groups.xlsx")
+inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations_tx/rs_p15_ko_inclusion_upset_groups.xlsx")
 inclusion_upsetr[["all_plot"]]
-pp(file = "37upset_locations/inclusion_sr_p15_ko_upset.pdf")
+pp(file = "37upset_locations_tx/inclusion_sr_p15_ko_upset.pdf")
 print(inclusion_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5066,9 +4233,9 @@ plotted <- dev.off()
 ```{r}
 table_names <- c("p08_ko_scn", "p08_ko_retina", "p15_ko_scn", "p15_ko_retina")
 inclusion_upsetr <- upsetr_sig(inclusion_sig, contrasts = table_names)
-inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations/rs_p08p15_ko_inclusion_upset_groups.xlsx")
+inclusion_upset_written <- write_upset_groups(inclusion_upsetr, excel = "37upset_locations_tx/rs_p08p15_ko_inclusion_upset_groups.xlsx")
 inclusion_upsetr[["all_plot"]]
-pp(file = "37upset_locations/inclusion_sr_p08p15_ko_upset.pdf")
+pp(file = "37upset_locations_tx/inclusion_sr_p08p15_ko_upset.pdf")
 print(inclusion_upsetr[["all_plot"]])
 plotted <- dev.off()
 ```
@@ -5078,54 +4245,54 @@ plotted <- dev.off()
 ```{r}
 msigdb <- "reference/msigdb_v2024.1.Mm.db"
 if (file.exists(msigdb)) {
-  v3_h_gsva <- simple_gsva(v3_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "mh",
+  tx_h_gsva <- simple_gsva(tx_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "mh",
                            signatures = msigdb, id_source = "fdata",
-                           required_id = "mgi_symbol")
-  v3_h_gsva
+                           required_id = "external_transcript_name")
+  tx_h_gsva
 
-  v3_h_gsva_sig <- get_sig_gsva_categories(
-    v3_h_gsva, excel = "38msigdb/gsva_sig_hallmark_categories.xlsx")
-  v3_h_gsva_sig
+  tx_h_gsva_sig <- get_sig_gsva_categories(
+    tx_h_gsva, excel = "38msigdb_tx/gsva_sig_hallmark_categories.xlsx")
+  tx_h_gsva_sig
 
-  v3_m1_gsva <- simple_gsva(v3_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m1",
+  tx_m1_gsva <- simple_gsva(tx_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m1",
                             signatures = msigdb, id_source = "fdata",
-                            required_id = "mgi_symbol")
-  v3_m1_gsva
-  v3_m1_gsva_sig <- get_sig_gsva_categories(
-    v3_m1_gsva, excel = "38msigdb/gsva_sig_positional_categories.xlsx")
-  v3_m1_gsva_sig
+                            required_id = "external_transcript_name")
+  tx_m1_gsva
+  tx_m1_gsva_sig <- get_sig_gsva_categories(
+    tx_m1_gsva, excel = "38msigdb_tx/gsva_sig_positional_categories.xlsx")
+  tx_m1_gsva_sig
 
-  v3_m2_gsva <- simple_gsva(v3_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m2",
+  tx_m2_gsva <- simple_gsva(tx_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m2",
                             signatures = msigdb, id_source = "fdata",
-                            required_id = "mgi_symbol")
-  v3_m2_gsva
-  v3_m2_gsva_sig <- get_sig_gsva_categories(
-    v3_m2_gsva, excel = "38msigdb/gsva_sig_curated_categories.xlsx")
-  v3_m2_gsva_sig
+                            required_id = "external_transcript_name")
+  tx_m2_gsva
+  tx_m2_gsva_sig <- get_sig_gsva_categories(
+    tx_m2_gsva, excel = "38msigdb_tx/gsva_sig_curated_categories.xlsx")
+  tx_m2_gsva_sig
 
-  v3_m3_gsva <- simple_gsva(v3_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m3",
+  tx_m3_gsva <- simple_gsva(tx_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m3",
                             signatures = msigdb, id_source = "fdata",
-                            required_id = "mgi_symbol")
-  v3_m3_gsva
-  v3_m3_gsva_sig <- get_sig_gsva_categories(
-    v3_m3_gsva, excel = "38msigdb/gsva_sig_regulatory_categories.xlsx")
-  v3_m3_gsva_sig
+                            required_id = "external_transcript_name")
+  tx_m3_gsva
+  tx_m3_gsva_sig <- get_sig_gsva_categories(
+    tx_m3_gsva, excel = "38msigdb_tx/gsva_sig_regulatory_categories.xlsx")
+  tx_m3_gsva_sig
 
-  v3_m5_gsva <- simple_gsva(v3_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m5",
+  tx_m5_gsva <- simple_gsva(tx_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m5",
                             signatures = msigdb, id_source = "fdata",
-                            required_id = "mgi_symbol")
-  v3_m5_gsva
-  v3_m5_gsva_sig <- get_sig_gsva_categories(
-    v3_m5_gsva, excel = "38msigdb/gsva_sig_ontology_categories.xlsx")
-  v3_m5_gsva_sig
+                            required_id = "external_transcript_name")
+  tx_m5_gsva
+  tx_m5_gsva_sig <- get_sig_gsva_categories(
+    tx_m5_gsva, excel = "38msigdb_tx/gsva_sig_ontology_categories.xlsx")
+  tx_m5_gsva_sig
 
-  v3_m8_gsva <- simple_gsva(v3_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m8",
+  tx_m8_gsva <- simple_gsva(tx_pairwise_input, orgdb = "org.Mm.eg.db", signature_category = "m8",
                             signatures = msigdb, id_source = "fdata",
-                            required_id = "mgi_symbol")
-  v3_m8_gsva
-  v3_m8_gsva_sig <- get_sig_gsva_categories(
-    v3_m8_gsva, excel = "38msigdb/gsva_sig_celltype_categories.xlsx")
-  v3_m8_gsva_sig
+                            required_id = "external_transcript_name")
+  tx_m8_gsva
+  tx_m8_gsva_sig <- get_sig_gsva_categories(
+    tx_m8_gsva, excel = "38msigdb_tx/gsva_sig_celltype_categories.xlsx")
+  tx_m8_gsva_sig
 }
 ```
 
@@ -5297,153 +4464,6 @@ plots[["dot"]]
 ### het scn
 
 Neither of the SCN gProfiler queries provided any results.
-
-# Compare the bulk and TRAP data
-
-There are a few variables from the bulk analyses which we may use to
-compare to the TRAP data:
-
-mm_de_dlgn_sva, mm_de_ret_sva, mm_de_scn_sva, mm_de_dlgn, mm_de_ret,
-mm_de_scn.
-
-Those are location-specific contrasts.
-
-genoloc_de_sva/genoloc_table_sva provide all contrasts that I thought
-might be fun.
-
-The following is all pre-wt filtering.  Next I will repeat everything post-filtering.
-
-```{r}
-## The bulk tables
-genoloc_table_sva[["table_names"]]
-
-## The TRAP tables
-location_tables_full[["table_names"]]
-genotype_tables_full[["table_names"]]
-time_tables_full[["table_names"]]
-
-## Retina het vs Retina wt
-bulk_table <- genoloc_table_sva[["data"]][["Retina_ko_vs_Retina_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p08_retina"]]
-retina_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-retina_ko_het_aucc
-retina_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-retina_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["Retina_ko_vs_Retina_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p15_retina"]]
-retina_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-retina_ko_het_aucc
-retina_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-retina_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["SCN_ko_vs_SCN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p08_scn"]]
-scn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-scn_ko_het_aucc
-scn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-scn_ko_het_ros[["lfc_scatter"]]
-
-
-bulk_table <- genoloc_table_sva[["data"]][["SCN_ko_vs_SCN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p15_scn"]]
-scn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-scn_ko_het_aucc
-scn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-scn_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["dLGN_ko_vs_dLGN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p08_dlgn"]]
-dlgn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-dlgn_ko_het_aucc
-dlgn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-dlgn_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["dLGN_ko_vs_dLGN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p15_dlgn"]]
-dlgn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-dlgn_ko_het_aucc
-dlgn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-dlgn_ko_het_ros[["lfc_scatter"]]
-```
-
-```{r}
-## The bulk tables
-genoloc_table_sva[["table_names"]]
-
-## The TRAP tables
-location_tables[["table_names"]]
-genotype_tables[["table_names"]]
-time_tables[["table_names"]]
-
-## Retina het vs Retina wt
-bulk_table <- genoloc_table_sva[["data"]][["Retina_ko_vs_Retina_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p08_retina"]]
-retina_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-retina_ko_het_aucc
-retina_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-retina_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["Retina_ko_vs_Retina_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p15_retina"]]
-retina_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-retina_ko_het_aucc
-retina_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-retina_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["SCN_ko_vs_SCN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p08_scn"]]
-scn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-scn_ko_het_aucc
-scn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-scn_ko_het_ros[["lfc_scatter"]]
-
-
-bulk_table <- genoloc_table_sva[["data"]][["SCN_ko_vs_SCN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p15_scn"]]
-scn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-scn_ko_het_aucc
-scn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-scn_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["dLGN_ko_vs_dLGN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p08_dlgn"]]
-dlgn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-dlgn_ko_het_aucc
-dlgn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-dlgn_ko_het_ros[["lfc_scatter"]]
-
-bulk_table <- genoloc_table_sva[["data"]][["dLGN_ko_vs_dLGN_het"]]
-trap_table <- genotype_tables_full[["data"]][["kh_p15_dlgn"]]
-dlgn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
-                                     px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-dlgn_ko_het_aucc
-dlgn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-dlgn_ko_het_ros[["lfc_scatter"]]
-```
 
 # Bibliography
 
