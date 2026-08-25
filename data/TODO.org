@@ -1,0 +1,67 @@
+#+OPTIONS: ^:nil
+#+PROPERTY: header-args :exports both :eval yes :results output verbatim
+#+bibliography: ~/Documents/bibtex/atb.bib
+#+CITE_EXPORT: csl pnas.csl
+#+SETUPFILE: ~/.emacs.d/org-templates/readtheorg_inline.theme
+#+title: TODOs
+
+** Some tasks from the review process
+
+Colenso dropped by and I want to write down the set of tasks to
+perform.  At this time I have completed a repeat of Theresa's/my
+notebook using hisat/subread derived mRNA quantifications; using them
+I invoked suppa and have an initial set of plots/tables with the
+various splicing comparisons.
+
+** DONE R1q2: Bulk vs TRAP: compare degree of agreement between the
+  rnaseq/trap data.  This requires collecting the tissue specific
+  contrasts in both datasets.  aucc/upset of corresponding contrasts
+  pre/post filtering.  Compare only retina het/ko, scn het/ko dlgn
+  het/ko; also wt/het && wt/ko for the same set in order to test the
+  hypothesis that non-specific binding lowers the similarity between
+  datasets.
+
+  Goal: report the degree and/or genes which overlap; upset/aucc
+
+** DONE  Double check significance metrics for bulk results.
+
+** TODO  Create table of thresholds.
+
+** DONE  Print violin plot of transcript abundances for Nlgn3 and Ncam1
+
+This query caused some significant concern for me for a few minutes:
+when I pulled the tx assay() data for the TRAP results, both of these
+genes showed basically 0 counts and I immediately assumed I did
+something horribly wrong; particularly because these genes were
+observed with a reasonable number of reads in the gene-quantified
+data.  I did some looking, but Colenso/Najib noted the obvious reason:
+featureCounts does not (unless you tell it to) count multi-hit reads.
+Thus, once can reasonably safely assume that if I re-collect the
+salmon results for these, we will observe a) more counts b) near
+certainty that they will not be significantly different across
+isoforms; since each read observed in multiple transcripts will be
+apportioned in part to each transcript.
+
+*** TODO Prove that this is true with the salmon results
+
+I think it is probably a good idea to make absolutely certain that
+this is true; I have the salmon results sitting there, so it should
+not be difficult, just a little time consuming.
+
+** TODO  Tx level abundances for bulk data.
+
+I think I have some salmon results for this too?  I just checked, I
+have currently only done this with hisat->featureCounts; running
+salmon now.
+
+*** TODO Print out the bulk tx results
+
+* Bibliography
+
+#+print_bibliography:
+
+
+* PostScript
+
+
+[[file:activity.org][Download]] the original document text.
