@@ -72,7 +72,7 @@ knitr::opts_chunk$set(
   error = TRUE, fig.width = 8, fig.height = 8, fig.retina = 2,
   out.width = "100%", dev = "png",
   dev.args = list(png = list(type = "cairo-png")))
-old_options <- options(digits = 4, stringsAsFactors = FALSE, knitr.duplicate.label = "allow")
+old_options <- options(stringsAsFactors = FALSE, knitr.duplicate.label = "allow")
 ggplot2::theme_set(ggplot2::theme_bw(base_size = 12))
 ver <- "202408"
 previous_file <- ""
@@ -274,18 +274,33 @@ container and should get loaded.
 
 ```{r}
 tx_gene_map <- data.frame()
-##mm_annot <- try(load_biomart_annotations(species = "mmusculus", year = "2023", month = "02", overwrite = TRUE))
-mm_annot <- try(load_biomart_annotations(species = "mmusculus", archive = FALSE, overwrite = FALSE,
-                                         gene_requests = annotation_columns,
-                                         symbol_columns = label_column))
-mm_tx_annot <- mm_annot[["annotation"]]
-## yeah, the ID tag in my gff file has transcript: as a prefix, so the featureCounts outputs
-## includes it...  I will fix that inpost.
-rownames(mm_tx_annot) <- paste0("transcript:", rownames(mm_tx_annot))
+mm_annot <- try(load_biomart_annotations(species = "mmusculus", host = "useast.ensembl.org",
+                                         archive = FALSE, overwrite = FALSE,
+                                         gene_requests = annotation_columns))
+fields <- c("ACCNUM", "ENSEMBL", "ENSEMBLTRANS", "ENTEZID", "GENENAME", "SYMBOL")
+orgdb_annot <- load_orgdb_annotations("org.Mm.eg.db", fields = fields)
+gene_info <- orgdb_annot[["genes"]]
 
-#mm_orgdb <- load_orgdb_annotations(
-#  orgdb = "Mus.musculus", keytype = "ACCNUM",
-#  fields = c("TXNAME", "TXTYPE", "TXCHROM", "TXSTART", "TXEND", "TXID", "TXSTRAND", "MGID"))
+## Note, there are a bunch of variants of the txdb package one might use.
+## I do not think it matters a lot for our purposes, but I suspect that if we used
+## a mismatched BSgenome and tried to pull CDS sequences, that might end badly.
+pkg <- "TxDb.Mmusculus.UCSC.mm10.knownGene"
+tx_annot <- load_txdb_annotations(pkg)
+transcripts <- tx_annot[["TX"]]
+transcripts[["tx"]] <- gsub(x = transcripts[["TXNAME"]],
+                            pattern = "\\.\\d+$", replacement = "")
+mm_annot_orgdb <- merge(gene_info, transcripts, by.x = "ensembltrans", by.y = "tx")
+rownames(mm_annot_orgdb) <- make.names(mm_annot_orgdb[["ensembl"]], unique = TRUE)
+
+mm_annot_combined <- merge(mm_annot[["annotation"]], mm_annot_orgdb, by.x = "ensembl_transcript_id", by.y = "ensembltrans", all.x = TRUE)
+
+mm_annot_genes <- mm_annot_combined
+rownames(mm_annot_genes) <- make.names(mm_annot_genes[["ensembl_gene_id"]], unique = TRUE)
+
+mm_annot_tx <- mm_annot_combined
+rownames(mm_annot_tx) <- make.names(mm_annot_tx[["ensembl_transcript_id"]], unique = TRUE)
+
+tx_gene_map <- mm_annot_genes[, c("TXID", "ensembl_gene_id")]
 ```
 
 # Hisat2 summarizedExperiments by transcript
@@ -523,7 +538,7 @@ moment and see what they look like across the various metadata factors of intere
 
 ## Grab the tx annotations for them
 
-```{r}
+```{r, eval=FALSE}
 nlgn3_idx <- grepl(x = rowData(mm38_hisat_tx)[["external_transcript_name"]], pattern = "^Nlgn3\\-")
 sum(nlgn3_idx)
 nlgn3_annot <- rowData(mm38_hisat_tx)[nlgn3_idx, ]
