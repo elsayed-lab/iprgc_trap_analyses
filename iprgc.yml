@@ -60,7 +60,9 @@ data/preprocessing/non_deduplicated_counts.tar /data/preprocessing/non_deduplica
 data/preprocessing/umi_dedup_mrna_count.tar /data/preprocessing/umi_dedup_mrna_count.tar
 data/preprocessing/symlink_counts.tar /data/preprocessing/symlink_counts.tar
 data/preprocessing/bulk_hisat_file.tar /data/preprocessing/bulk_hisat_file.tar
-data/preprocessing/bulk_salmon_counts.tar.xz /data/preprocessing/bulk_salmon_counts.tar.xz
+data/preprocessing/wt_bulk_salmon.tar.xz /data/preprocessing/wt_bulk_salmon.tar.xz
+data/preprocessing/het_bulk_salmon.tar.xz /data/preprocessing/het_bulk_salmon.tar.xz
+data/preprocessing/ko_bulk_salmon.tar.xz /data/preprocessing/ko_bulk_salmon.tar.xz
 data/sample_sheets/20240606_only_umd_sequenced_modified.xlsx /data/sample_sheets/20240606_only_umd_sequenced_modified.xlsx
 data/sample_sheets/20240606_only_umd_sequenced.xlsx /data/sample_sheets/20240606_only_umd_sequenced.xlsx
 
