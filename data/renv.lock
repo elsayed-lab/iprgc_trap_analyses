@@ -2635,6 +2635,30 @@
       "Maintainer": "Thorsten Pohlert <thorsten.pohlert@gmx.de>",
       "Repository": "CRAN"
     },
+    "TxDb.Mmusculus.UCSC.mm10.knownGene": {
+      "Package": "TxDb.Mmusculus.UCSC.mm10.knownGene",
+      "Version": "3.10.0",
+      "Source": "Bioconductor",
+      "Title": "Annotation package for TxDb object(s)",
+      "Description": "Exposes an annotation databases generated from UCSC by exposing these as TxDb objects",
+      "Author": "Bioconductor Core Team, Bioconductor Package Maintainer <maintainer@bioconductor.org> [cre]",
+      "Maintainer": "Bioconductor Package Maintainer <maintainer@bioconductor.org>",
+      "Depends": [
+        "GenomicFeatures (>= 1.37.4)"
+      ],
+      "Imports": [
+        "AnnotationDbi"
+      ],
+      "License": "Artistic-2.0",
+      "organism": "Mus musculus",
+      "species": "Mus musculus",
+      "provider": "UCSC",
+      "provider_version": "mm10 genome based on the knownGene table",
+      "release_date": "2019-10-21 20:52:26 +0000 (Mon, 21 Oct 2019)",
+      "resource_url": "http://genome.ucsc.edu/",
+      "biocViews": "AnnotationData, Genetics, TxDb, Mus_musculus",
+      "NeedsCompilation": "no"
+    },
     "UpSetR": {
       "Package": "UpSetR",
       "Version": "1.4.1",
@@ -9168,6 +9192,30 @@
       "Author": "Philipp Schauberger [aut], Alexander Walker [aut], Luca Braglia [ctb], Joshua Sturm [ctb], Jan Marvin Garbuszus [ctb, cre], Jordan Mark Barbone [ctb] (ORCID: <https://orcid.org/0000-0001-9788-3628>), David Zimmermann [ctb], Reinhold Kainhofer [ctb]",
       "Maintainer": "Jan Marvin Garbuszus <jan.garbuszus@ruhr-uni-bochum.de>",
       "Repository": "CRAN"
+    },
+    "org.Mm.eg.db": {
+      "Package": "org.Mm.eg.db",
+      "Version": "3.22.0",
+      "Source": "Bioconductor",
+      "Title": "Genome wide annotation for Mouse",
+      "Description": "Genome wide annotation for Mouse, primarily based on mapping using Entrez Gene identifiers.",
+      "Author": "Marc Carlson",
+      "Maintainer": "Bioconductor Package Maintainer <maintainer@bioconductor.org>",
+      "Depends": [
+        "R (>= 2.7.0)",
+        "methods",
+        "AnnotationDbi (>= 1.71.1)"
+      ],
+      "Suggests": [
+        "DBI",
+        "annotate",
+        "RUnit"
+      ],
+      "License": "Artistic-2.0",
+      "organism": "Mus musculus",
+      "species": "Mouse",
+      "biocViews": "OrgDb, AnnotationData, Mus_musculus, mouseLLMappings",
+      "NeedsCompilation": "no"
     },
     "otel": {
       "Package": "otel",
