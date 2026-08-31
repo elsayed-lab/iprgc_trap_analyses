@@ -5504,11 +5504,8 @@ bulk_table <- genoloc_table_sva[["data"]][["dLGN_ko_vs_dLGN_het"]]
 trap_table <- genotype_tables_full[["data"]][["kh_p15_dlgn"]]
 dlgn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
                                      px = "deseq_adjp", py = "deseq_adjp",
-                                     lx = "deseq_logfc", ly = "deseq_logfc")
-dlgn_ko_het_aucc
-dlgn_ko_het_ros <- rank_order_scatter(bulk_table, trap_table)
-dlgn_ko_het_ros[["lfc_scatter"]]
 ```
+
 
 # Bibliography
 
