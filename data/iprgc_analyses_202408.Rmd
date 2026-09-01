@@ -5506,7 +5506,6 @@ dlgn_ko_het_aucc <- calculate_aucc(bulk_table, trap_table,
                                      px = "deseq_adjp", py = "deseq_adjp",
 ```
 
-
 # Bibliography
 
 ```{r saveme, eval=FALSE}

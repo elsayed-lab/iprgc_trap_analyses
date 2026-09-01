@@ -39,7 +39,6 @@ data/Makefile /data/Makefile
 data/renv.lock /data/renv.lock
 data/renv/activate.R /data/renv/activate.R
 data/renv/settings.json /data/renv/settings.json
-data/renv/.gitignore /data/renv/.gitignore
 data/human_ribosome_L22_red.png /data/human_ribosome_L22_red.png
 data/mmusculus_RPL22_green_center.png /data/mmusculus_RPL22_green_center.png
 data/README.Rmd /data/README.Rmd
