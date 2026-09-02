@@ -17,12 +17,13 @@ message("Setting the bioconductor release to ", bioc_version, ".")
 updated <- BiocManager::install(version = bioc_version)
 github_pkgs <- c(
   "Bioconductor/AnnotationHubData", "js229/Vennerable", "YuLab-SMU/ggtree", "davidsjoberg/ggsankey",
-  "reesyxan/iDA", "dviraran/xCell")
+  "reesyxan/iDA", "dviraran/xCell", "IndrajeetPatil/groupedstats", "IndrajeetPatil/ggstatsplot")
 local_pkgs <- c("hpgltools")
 random_helpers <- c(
   "BSgenome", "CMplot", "devtools", "flashClust", "forestplot", "ggbio", "ggbreak",
   "glmnet", "irr", "lares", "patchwork", "pathwayPCA", "ranger", "remotes", "renv", "rpart",
-  "rpart.plot", "rWikiPathways", "tidyverse", "xgboost")
+  "rpart.plot", "rWikiPathways", "tidyverse", "xgboost", "org.Mm.eg.db",
+  "TxDb.Mmusculus.UCSC.mm10.knownGene")
 
 start_options <- options(configure.args.preprocessCore = "--disable-threading",
                          renv.config.install.transactional = FALSE,
