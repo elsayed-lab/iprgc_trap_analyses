@@ -47,8 +47,8 @@ data/sample_sheets/README.md /data/sample_sheets/README.md
 data/atb.bib /data/atb.bib
 data/01_iprgc_gene_analyses.Rmd /data/01_iprgc_gene_analyses.Rmd
 data/02_iprgc_bulk_gene_analyses.Rmd /data/02_iprgc_bulk_gene_analyses.Rmd
-data/03_iprgc_transcript_analyses.Rmd /data/01_iprgc_transcript_analyses.Rmd
-data/04_iprgc_bulk_transcript_analyses.Rmd /data/02_iprgc_bulk_transcript_analyses.Rmd
+data/03_iprgc_transcript_analyses.Rmd /data/033_iprgc_transcript_analyses.Rmd
+data/04_iprgc_bulk_transcript_analyses.Rmd /data/04_iprgc_bulk_transcript_analyses.Rmd
 data/05_compare_trap_bulk.Rmd /data/05compare_trap_bulk.Rmd
 data/preprocessing.Rmd /data/preprocessing.Rmd
 data/taa_analyses.Rmd /data/taa_analyses.Rmd
